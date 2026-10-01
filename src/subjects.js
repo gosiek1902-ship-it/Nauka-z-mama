@@ -102,7 +102,9 @@ const subjectCatalog = [
       },
     },
   ] },
-  { id: 'niemiecki', name: 'Język niemiecki', speechLanguage: 'de-DE', icon: '💬', color: '#dda85c', lessons: [] },
+  { id: 'niemiecki', name: 'Język niemiecki', speechLanguage: 'de-DE', icon: '💬', color: '#dda85c', lessons: [
+    { title: 'Guten Tag!', speechLanguage: 'de-DE', titleSpeechSegments: [{ text: 'Guten Tag!', lang: 'de-DE' }] },
+  ] },
   { id: 'matematyka', name: 'Matematyka', speechLanguage: 'pl-PL', icon: '🔢', color: '#7fb79a', lessons: [
     {
       title: 'Ułamki zwykłe',

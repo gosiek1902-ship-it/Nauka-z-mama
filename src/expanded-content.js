@@ -7,6 +7,7 @@ const open = (question, acceptedAnswers, explanation, level = difficulty()) => (
 const speech = (...parts) => parts.map(([text, lang]) => ({ text, lang }));
 const pl = (text) => [text, 'pl-PL'];
 const en = (text) => [text, 'en-GB'];
+const de = (text) => [text, 'de-DE'];
 
 window.NaukaZMamaExpandedContent = {
   'Ułamki zwykłe': {
@@ -236,6 +237,203 @@ window.NaukaZMamaExpandedContent = {
       open('Przetłumacz na polski: Put on your jacket.', ['załóż swoją kurtkę', 'załóż kurtkę'], 'Put on znaczy „załóż”, a jacket to kurtka.')
     ],
   },
+};
+
+// Niemiecki: każda niemiecka i polska część materiału ma jawny język mowy.
+const germanPair = (german, polish) => speech(de(german), pl(polish));
+const germanNote = (title, lines, example, remember, titleSegments, rememberSegments) => ({
+  title,
+  titleSpeechSegments: titleSegments ? speech(...titleSegments) : speech(pl(title)),
+  points: lines.map(([german, polish]) => `${german} — ${polish}`),
+  pointSpeechSegments: lines.map(([german, polish]) => germanPair(german, polish)),
+  ...(example ? { example: `${example[0]} — ${example[1]}`, exampleSpeechSegments: germanPair(...example) } : {}),
+  ...(remember ? { remember: remember[0], rememberSpeechSegments: rememberSegments ? speech(...rememberSegments) : speech(pl(remember[0])) } : {}),
+});
+const germanExercise = (prompt, promptParts, answer, answerParts, extra = {}) => ({
+  type: 'open', prompt, promptLanguage: 'pl-PL', speechSegments: speech(...promptParts),
+  acceptedAnswers: Array.isArray(answer) ? answer : [answer], answerSpeechSegments: speech(...answerParts),
+  hint: 'Spokojnie przypomnij sobie zwrot z notatki.', hintSpeechSegments: speech(pl('Spokojnie przypomnij sobie zwrot z notatki.')),
+  ...extra,
+});
+const germanChoice = (prompt, promptParts, options, correct, answerParts, explanationParts) => ({
+  type: 'choice', prompt, promptLanguage: 'pl-PL', speechSegments: speech(...promptParts),
+  options, correct, answerSpeechSegments: speech(...answerParts),
+  hint: 'Wróć do odpowiedniej sekcji notatki.', hintSpeechSegments: speech(pl('Wróć do odpowiedniej sekcji notatki.')),
+  acceptedAnswers: [],
+  explanation: explanationParts.map(([text]) => text).join(' '), explanationSpeechSegments: speech(...explanationParts),
+});
+const germanQuizChoice = (question, questionParts, answers, correct, answerParts, explanationParts, level) => ({
+  type: 'choice', question, promptLanguage: 'pl-PL', speechSegments: speech(...questionParts),
+  answers, correct, answerSpeechSegments: speech(...answerParts), explanation: explanationParts.map(([text]) => text).join(' '),
+  explanationSpeechSegments: speech(...explanationParts), level,
+});
+const germanQuizOpen = (question, questionParts, acceptedAnswers, answerParts, explanationParts, level) => ({
+  type: 'open', question, promptLanguage: 'pl-PL', speechSegments: speech(...questionParts),
+  acceptedAnswers, answerSpeechSegments: speech(...answerParts), explanation: explanationParts.map(([text]) => text).join(' '),
+  explanationSpeechSegments: speech(...explanationParts), level,
+});
+
+window.NaukaZMamaExpandedContent['Guten Tag!'] = {
+  speechLanguage: 'de-DE',
+  summary: 'Poznasz powitania, pożegnania i krótkie zdania o sobie. Ucz się małymi krokami: przeczytaj zwrot, jego tłumaczenie, a potem powiedz go na głos.',
+  summarySpeechSegments: speech(pl('Poznasz powitania, pożegnania i krótkie zdania o sobie. Ucz się małymi krokami: przeczytaj zwrot, jego tłumaczenie, a potem powiedz go na głos.')),
+  detailedNotes: [
+    germanNote('Begrüßung – powitania', [
+      ['Guten Morgen!', 'Dzień dobry! (rano)'], ['Guten Tag!', 'Dzień dobry!'], ['Guten Abend!', 'Dobry wieczór!'],
+      ['Hallo!', 'Cześć! / Witaj!'], ['Gute Nacht!', 'Dobranoc! (na pożegnanie przed snem)'],
+    ], ['Guten Morgen, Aleksander!', 'Dzień dobry, Aleksandrze!'], ['Rano mówimy Guten Morgen, a wieczorem Guten Abend. Gute Nacht mówimy, gdy ktoś idzie spać.'], [de('Begrüßung'), pl('– powitania')], [pl('Rano mówimy'), de('Guten Morgen'), pl(', a wieczorem'), de('Guten Abend'), pl('.'), de('Gute Nacht'), pl('mówimy, gdy ktoś idzie spać.')]),
+    germanNote('Abschied – pożegnania', [
+      ['Auf Wiedersehen!', 'Do widzenia! (grzecznie)'], ['Tschüss!', 'Pa!'], ['Bis bald!', 'Do zobaczenia wkrótce!'], ['Bis morgen!', 'Do jutra!'],
+    ], ['Tschüss, bis morgen!', 'Pa, do jutra!'], ['Gute Nacht to pożegnanie przed snem. W innych sytuacjach możesz powiedzieć Tschüss albo Auf Wiedersehen.'], [de('Abschied'), pl('– pożegnania')], [de('Gute Nacht'), pl('to pożegnanie przed snem. W innych sytuacjach możesz powiedzieć'), de('Tschüss'), pl('albo'), de('Auf Wiedersehen.' )]),
+    germanNote('Przedstawianie się', [
+      ['Wie heißt du?', 'Jak masz na imię?'], ['Ich heiße Aleksander.', 'Mam na imię Aleksander.'],
+      ['Wer bist du?', 'Kim jesteś?'], ['Ich bin Aleksander.', 'Jestem Aleksander.'],
+    ], ['Hallo! Wie heißt du? — Ich heiße Aleksander.', 'Cześć! Jak masz na imię? — Mam na imię Aleksander.'], ['W pytaniu Wie heißt du? używamy du, gdy rozmawiamy z jedną osobą, z którą jesteśmy na ty.'], undefined, [pl('W pytaniu'), de('Wie heißt du?'), pl('używamy'), de('du'), pl(', gdy rozmawiamy z jedną osobą, z którą jesteśmy na ty.')]),
+    germanNote('Skąd jesteś?', [
+      ['Woher kommst du?', 'Skąd jesteś?'], ['Ich komme aus Polen.', 'Pochodzę z Polski.'], ['Ich komme aus Deutschland.', 'Pochodzę z Niemiec.'],
+    ], ['Woher kommst du? — Ich komme aus Polen.', 'Skąd jesteś? — Pochodzę z Polski.'], ['Po aus zwykle podajemy nazwę kraju. Nazwę kraju zapamiętuj razem z przyimkiem, np. aus Polen.'], undefined, [pl('Po'), de('aus'), pl('zwykle podajemy nazwę kraju. Nazwę kraju zapamiętuj razem z przyimkiem, np.'), de('aus Polen.')]),
+    germanNote('Gdzie mieszkasz?', [
+      ['Wo wohnst du?', 'Gdzie mieszkasz?'], ['Ich wohne in Warschau.', 'Mieszkam w Warszawie.'], ['Ich wohne in Krakau.', 'Mieszkam w Krakowie.'],
+    ], ['Wo wohnst du? — Ich wohne in Warschau.', 'Gdzie mieszkasz? — Mieszkam w Warszawie.'], ['Pytanie Wo wohnst du? dotyczy miejsca zamieszkania. Odpowiadamy Ich wohne in…'], undefined, [pl('Pytanie'), de('Wo wohnst du?'), pl('dotyczy miejsca zamieszkania. Odpowiadamy'), de('Ich wohne in…')]),
+    germanNote('Jak się masz?', [
+      ['Wie geht’s?', 'Jak się masz?'], ['Wie geht es dir?', 'Jak się masz? (pełna forma)'], ['Gut, danke.', 'Dobrze, dziękuję.'],
+      ['Sehr gut!', 'Bardzo dobrze!'], ['Es geht.', 'Jakoś leci.'], ['Nicht so gut.', 'Niezbyt dobrze.'],
+    ], ['Wie geht es dir? — Sehr gut, danke!', 'Jak się masz? — Bardzo dobrze, dziękuję!'], ['Możesz odpowiedzieć krótko i zgodnie z tym, jak naprawdę się czujesz.']),
+    germanNote('Liczby 0–20', [
+      ['null, eins, zwei, drei, vier', 'zero, jeden, dwa, trzy, cztery'], ['fünf, sechs, sieben, acht, neun', 'pięć, sześć, siedem, osiem, dziewięć'],
+      ['zehn, elf, zwölf, dreizehn, vierzehn', 'dziesięć, jedenaście, dwanaście, trzynaście, czternaście'],
+      ['fünfzehn, sechzehn, siebzehn, achtzehn, neunzehn, zwanzig', 'piętnaście, szesnaście, siedemnaście, osiemnaście, dziewiętnaście, dwadzieścia'],
+    ], ['sieben + drei = zehn', 'siedem + trzy = dziesięć'], ['Liczby 13–19 zwykle kończą się na -zehn. Uwaga: sechzehn (16) i siebzehn (17) mają krótszą formę.'], undefined, [pl('Liczby 13–19 zwykle kończą się na'), de('-zehn.'), pl('Uwaga:'), de('sechzehn'), pl('(16) i'), de('siebzehn'), pl('(17) mają krótszą formę.')]),
+    germanNote('Ile masz lat?', [
+      ['Wie alt bist du?', 'Ile masz lat?'], ['Ich bin elf Jahre alt.', 'Mam jedenaście lat.'], ['Ich bin zehn Jahre alt.', 'Mam dziesięć lat.'],
+    ], ['Wie alt bist du? — Ich bin elf Jahre alt.', 'Ile masz lat? — Mam jedenaście lat.'], ['Po Ich bin podajemy liczbę i słowa Jahre alt. Wiek po niemiecku wyrażamy jako „jestem … lat stary”.'], undefined, [pl('Po'), de('Ich bin'), pl('podajemy liczbę i słowa'), de('Jahre alt.'), pl('Wiek po niemiecku wyrażamy jako „jestem … lat stary”.')]),
+    germanNote('Du i Sie', [
+      ['du', 'ty — do kolegi, koleżanki lub dziecka'], ['Sie', 'Pan / Pani / Państwo — grzecznie do dorosłej osoby'],
+      ['Wie heißen Sie?', 'Jak ma Pan / Pani na imię?'], ['Wie heißen Sie, Frau Müller?', 'Jak ma Pani na imię, pani Müller?'],
+    ], ['Hallo, Mia! Wie heißt du?', 'Cześć, Mia! Jak masz na imię?'], ['Sie grzecznościowe zapisujemy wielką literą. Jeśli nie wiesz, której formy użyć, zapytaj dorosłego.'], undefined, [de('Sie'), pl('grzecznościowe zapisujemy wielką literą. Jeśli nie wiesz, której formy użyć, zapytaj dorosłego.')]),
+    germanNote('Czasownik sein – być', [
+      ['ich bin', 'ja jestem'], ['du bist', 'ty jesteś'], ['er ist / sie ist', 'on jest / ona jest'],
+      ['wir sind', 'my jesteśmy'], ['ihr seid', 'wy jesteście'], ['sie sind / Sie sind', 'oni są / Pan, Pani lub Państwo są'],
+    ], ['Ich bin Aleksander. Du bist Mia.', 'Jestem Aleksander. Ty jesteś Mia.'], ['Odmianę sein warto zapamiętać w rytmie: ich bin, du bist, er/sie ist, wir sind, ihr seid, sie/Sie sind.'], undefined, [pl('Odmianę'), de('sein'), pl('warto zapamiętać w rytmie:'), de('ich bin, du bist, er/sie ist, wir sind, ihr seid, sie/Sie sind.')]),
+    germanNote('Podstawowe czasowniki', [
+      ['heißen', 'nazywać się'], ['kommen', 'pochodzić / przychodzić'], ['wohnen', 'mieszkać'], ['sein', 'być'], ['haben', 'mieć'],
+      ['Ich heiße Mia.', 'Mam na imię Mia.'], ['Ich komme aus Polen.', 'Pochodzę z Polski.'], ['Ich wohne in Łódź.', 'Mieszkam w Łodzi.'], ['Ich habe ein Buch.', 'Mam książkę.'],
+    ], ['Wie heißt du? — Ich heiße Mia.', 'Jak masz na imię? — Mam na imię Mia.'], ['Ucz się czasownika w krótkim zdaniu. Wtedy łatwiej pamiętać, jak go użyć.'], undefined, [pl('Ucz się czasownika w krótkim zdaniu. Wtedy łatwiej pamiętać, jak go użyć.')]),
+    germanNote('Państwa i pochodzenie', [
+      ['Polen', 'Polska'], ['Deutschland', 'Niemcy'], ['Österreich', 'Austria'], ['die Schweiz', 'Szwajcaria'],
+      ['polnisch', 'polski / polska'], ['deutsch', 'niemiecki / niemiecka'], ['österreichisch', 'austriacki / austriacka'], ['schweizerisch', 'szwajcarski / szwajcarska'],
+      ['Ich komme aus Polen.', 'Pochodzę z Polski.'], ['Ich bin polnisch.', 'Jestem Polakiem / Polką.'],
+    ], ['Er kommt aus Deutschland. Er ist deutsch.', 'On pochodzi z Niemiec. Jest Niemcem.'], ['Nazwy państw piszemy wielką literą. W zdaniu Ich komme aus Polen kraj też zaczyna się wielką literą.'], undefined, [pl('Nazwy państw piszemy wielką literą. W zdaniu'), de('Ich komme aus Polen'), pl('kraj też zaczyna się wielką literą.')]),
+    germanNote('Krótki dialog', [
+      ['A: Guten Tag! Wie heißt du?', 'A: Dzień dobry! Jak masz na imię?'], ['B: Hallo! Ich heiße Aleksander.', 'B: Cześć! Mam na imię Aleksander.'],
+      ['A: Woher kommst du?', 'A: Skąd jesteś?'], ['B: Ich komme aus Polen. Wo wohnst du?', 'B: Pochodzę z Polski. Gdzie mieszkasz?'],
+      ['A: Ich wohne in Berlin. Wie geht’s?', 'A: Mieszkam w Berlinie. Jak się masz?'], ['B: Gut, danke. Tschüss!', 'B: Dobrze, dziękuję. Pa!'],
+    ], ['Bis bald!', 'Do zobaczenia wkrótce!'], ['Możesz zamienić imię, kraj, miasto i odpowiedź o samopoczuciu. Nie musisz uczyć się dialogu na pamięć słowo w słowo.'], undefined, [pl('Możesz zamienić imię, kraj, miasto i odpowiedź o samopoczuciu. Nie musisz uczyć się dialogu na pamięć słowo w słowo.')]),
+  ],
+  definitions: [
+    { term: 'sein', termSpeechSegments: speech(de('sein')), meaning: 'Czasownik „być”.', meaningSpeechSegments: speech(pl('Czasownik „być”.')), example: 'ich bin — ja jestem', exampleSpeechSegments: germanPair('ich bin', 'ja jestem') },
+    { term: 'heißen', termSpeechSegments: speech(de('heißen')), meaning: 'Czasownik „nazywać się”.', meaningSpeechSegments: speech(pl('Czasownik „nazywać się”.')), example: 'Ich heiße Mia. — Mam na imię Mia.', exampleSpeechSegments: germanPair('Ich heiße Mia.', 'Mam na imię Mia.') },
+    { term: 'du', termSpeechSegments: speech(de('du')), meaning: 'Forma „ty”, używana nieoficjalnie.', meaningSpeechSegments: speech(pl('Forma „ty”, używana nieoficjalnie.')) },
+    { term: 'Sie', termSpeechSegments: speech(de('Sie')), meaning: 'Grzeczna forma „Pan / Pani / Państwo”.', meaningSpeechSegments: speech(pl('Grzeczna forma „Pan / Pani / Państwo”.')) },
+  ],
+  importantFacts: [
+    'Guten Morgen mówimy rano, Guten Tag w dzień, a Guten Abend wieczorem.',
+    'Gute Nacht to pożegnanie przed snem.',
+    'Pytamy Wie heißt du? i odpowiadamy Ich heiße…',
+    'Odmiana sein: ich bin, du bist, er/sie ist, wir sind, ihr seid, sie/Sie sind.',
+    'du jest nieformalne, a Sie grzecznościowe i zapisujemy je wielką literą.',
+  ],
+  importantFactsSpeechSegments: [
+    speech(de('Guten Morgen'), pl('mówimy rano,'), de('Guten Tag'), pl('w dzień, a'), de('Guten Abend'), pl('wieczorem.')),
+    speech(de('Gute Nacht'), pl('to pożegnanie przed snem.')),
+    speech(pl('Pytamy'), de('Wie heißt du?'), pl('i odpowiadamy'), de('Ich heiße…')),
+    speech(pl('Odmiana'), de('sein:'), de('ich bin, du bist, er/sie ist, wir sind, ihr seid, sie/Sie sind.')),
+    speech(de('du'), pl('jest nieformalne, a'), de('Sie'), pl('grzecznościowe i zapisujemy je wielką literą.')),
+  ],
+  cheatSheet: [
+    { title: 'Powitania i pożegnania', titleSpeechSegments: speech(pl('Powitania i pożegnania')), items: [
+      { label: 'Guten Tag!', labelSpeechSegments: speech(de('Guten Tag!')), text: 'Dzień dobry!', textSpeechSegments: speech(pl('Dzień dobry!')) },
+      { label: 'Hallo!', labelSpeechSegments: speech(de('Hallo!')), text: 'Cześć!', textSpeechSegments: speech(pl('Cześć!')) },
+      { label: 'Auf Wiedersehen!', labelSpeechSegments: speech(de('Auf Wiedersehen!')), text: 'Do widzenia!', textSpeechSegments: speech(pl('Do widzenia!')) },
+      { label: 'Tschüss! / Bis bald! / Bis morgen!', labelSpeechSegments: speech(de('Tschüss! / Bis bald! / Bis morgen!')), text: 'Pa! / Do zobaczenia wkrótce! / Do jutra!', textSpeechSegments: speech(pl('Pa! / Do zobaczenia wkrótce! / Do jutra!')) },
+    ], remember: 'Gute Nacht! oznacza „Dobranoc!” i mówimy tak przed snem.', rememberSpeechSegments: speech(de('Gute Nacht!'), pl('oznacza „Dobranoc!” i mówimy tak przed snem.')) },
+    { title: 'O sobie', titleSpeechSegments: speech(pl('O sobie')), items: [
+      { label: 'Wie heißt du?', labelSpeechSegments: speech(de('Wie heißt du?')), text: 'Jak masz na imię?', textSpeechSegments: speech(pl('Jak masz na imię?')) },
+      { label: 'Ich heiße…', labelSpeechSegments: speech(de('Ich heiße…')), text: 'Mam na imię…', textSpeechSegments: speech(pl('Mam na imię…')) },
+      { label: 'Woher kommst du?', labelSpeechSegments: speech(de('Woher kommst du?')), text: 'Skąd jesteś?', textSpeechSegments: speech(pl('Skąd jesteś?')) },
+      { label: 'Ich komme aus Polen.', labelSpeechSegments: speech(de('Ich komme aus Polen.')), text: 'Pochodzę z Polski.', textSpeechSegments: speech(pl('Pochodzę z Polski.')) },
+      { label: 'Wo wohnst du? / Ich wohne in…', labelSpeechSegments: speech(de('Wo wohnst du? / Ich wohne in…')), text: 'Gdzie mieszkasz? / Mieszkam w…', textSpeechSegments: speech(pl('Gdzie mieszkasz? / Mieszkam w…')) },
+    ] },
+    { title: 'Samopoczucie i wiek', titleSpeechSegments: speech(pl('Samopoczucie i wiek')), items: [
+      { label: 'Wie geht’s?', labelSpeechSegments: speech(de('Wie geht’s?')), text: 'Jak się masz?', textSpeechSegments: speech(pl('Jak się masz?')) },
+      { label: 'Gut, danke. / Sehr gut. / Es geht. / Nicht so gut.', labelSpeechSegments: speech(de('Gut, danke. / Sehr gut. / Es geht. / Nicht so gut.')), text: 'Dobrze, dziękuję. / Bardzo dobrze. / Jakoś leci. / Niezbyt dobrze.', textSpeechSegments: speech(pl('Dobrze, dziękuję. / Bardzo dobrze. / Jakoś leci. / Niezbyt dobrze.')) },
+      { label: 'Wie alt bist du?', labelSpeechSegments: speech(de('Wie alt bist du?')), text: 'Ile masz lat?', textSpeechSegments: speech(pl('Ile masz lat?')) },
+      { label: 'Ich bin … Jahre alt.', labelSpeechSegments: speech(de('Ich bin … Jahre alt.')), text: 'Mam … lat.', textSpeechSegments: speech(pl('Mam … lat.')) },
+    ] },
+    { title: 'Liczby 0–20', titleSpeechSegments: speech(pl('Liczby 0–20')), items: [
+      { label: '0–5', labelSpeechSegments: speech(pl('Zero–pięć')), text: 'null, eins, zwei, drei, vier, fünf', textSpeechSegments: speech(de('null, eins, zwei, drei, vier, fünf')) },
+      { label: '6–10', labelSpeechSegments: speech(pl('Sześć–dziesięć')), text: 'sechs, sieben, acht, neun, zehn', textSpeechSegments: speech(de('sechs, sieben, acht, neun, zehn')) },
+      { label: '11–15', labelSpeechSegments: speech(pl('Jedenaście–piętnaście')), text: 'elf, zwölf, dreizehn, vierzehn, fünfzehn', textSpeechSegments: speech(de('elf, zwölf, dreizehn, vierzehn, fünfzehn')) },
+      { label: '16–20', labelSpeechSegments: speech(pl('Szesnaście–dwadzieścia')), text: 'sechzehn, siebzehn, achtzehn, neunzehn, zwanzig', textSpeechSegments: speech(de('sechzehn, siebzehn, achtzehn, neunzehn, zwanzig')) },
+    ], remember: 'Zapamiętaj wyjątki: sechzehn (16) i siebzehn (17).', rememberSpeechSegments: speech(pl('Zapamiętaj wyjątki:'), de('sechzehn'), pl('(16) i'), de('siebzehn'), pl('(17).')) },
+    { title: 'Czasownik sein – być', titleSpeechSegments: speech(de('sein'), pl('– być')), items: [
+      { label: 'ich bin', labelSpeechSegments: speech(de('ich bin')), text: 'ja jestem', textSpeechSegments: speech(pl('ja jestem')) }, { label: 'du bist', labelSpeechSegments: speech(de('du bist')), text: 'ty jesteś', textSpeechSegments: speech(pl('ty jesteś')) },
+      { label: 'er/sie ist', labelSpeechSegments: speech(de('er/sie ist')), text: 'on/ona jest', textSpeechSegments: speech(pl('on/ona jest')) }, { label: 'wir sind', labelSpeechSegments: speech(de('wir sind')), text: 'my jesteśmy', textSpeechSegments: speech(pl('my jesteśmy')) },
+      { label: 'ihr seid', labelSpeechSegments: speech(de('ihr seid')), text: 'wy jesteście', textSpeechSegments: speech(pl('wy jesteście')) }, { label: 'sie/Sie sind', labelSpeechSegments: speech(de('sie/Sie sind')), text: 'oni są / Pan, Pani są', textSpeechSegments: speech(pl('oni są / Pan, Pani są')) },
+    ], example: 'Ich bin elf Jahre alt. — Mam jedenaście lat.', exampleSpeechSegments: germanPair('Ich bin elf Jahre alt.', 'Mam jedenaście lat.') },
+    { title: 'du czy Sie?', titleSpeechSegments: speech(de('du'), pl('czy'), de('Sie?')), rule: 'du mówimy do kolegi lub dziecka. Sie używamy grzecznościowo wobec dorosłych.', ruleSpeechSegments: speech(de('du'), pl('mówimy do kolegi lub dziecka.'), de('Sie'), pl('używamy grzecznościowo wobec dorosłych.')), remember: 'Grzecznościowe Sie zawsze zapisujemy wielką literą.', rememberSpeechSegments: speech(pl('Grzecznościowe'), de('Sie'), pl('zawsze zapisujemy wielką literą.')) },
+  ],
+  reviewExercises: [
+    germanChoice('Co znaczy Guten Morgen?', [pl('Co znaczy'), de('Guten Morgen?')], ['Dobry wieczór', 'Dzień dobry rano', 'Dobranoc'], 1, [pl('Dzień dobry rano')], [de('Guten Morgen'), pl('mówimy rano.')]),
+    germanChoice('Jak po niemiecku powiesz „Pa!”?', [pl('Jak po niemiecku powiesz „Pa!”?')], ['Tschüss!', 'Guten Abend!', 'Danke!'], 0, [de('Tschüss!')], [de('Tschüss'), pl('znaczy „Pa!”.')]),
+    germanExercise('Wpisz po niemiecku: Dzień dobry!', [pl('Wpisz po niemiecku: Dzień dobry!')], ['Guten Tag!', 'Guten Tag'], [de('Guten Tag!')]),
+    germanExercise('Uzupełnij: Auf Wieder____! (Do widzenia)', [pl('Uzupełnij: Do widzenia po niemiecku to'), de('Auf Wieder'), pl('____!')], ['sehen', 'Auf Wiedersehen', 'Auf Wiedersehen!'], [de('Auf Wiedersehen!')]),
+    germanChoice('Które pytanie znaczy „Jak masz na imię?”?', [pl('Które pytanie znaczy „Jak masz na imię?”?')], ['Wie heißt du?', 'Wo wohnst du?', 'Wie geht’s?'], 0, [de('Wie heißt du?')], [de('Wie heißt du?'), pl('pyta o imię.')]),
+    germanExercise('Odpowiedz: „Mam na imię Mia.”', [pl('Odpowiedz: „Mam na imię Mia.”')], ['Ich heiße Mia.', 'Ich heiße Mia'], [de('Ich heiße Mia.')]),
+    germanChoice('Co znaczy Woher kommst du?', [pl('Co znaczy'), de('Woher kommst du?')], ['Gdzie mieszkasz?', 'Skąd jesteś?', 'Ile masz lat?'], 1, [pl('Skąd jesteś?')], [de('Woher kommst du?'), pl('pytamy o pochodzenie.')]),
+    germanExercise('Uzupełnij: Ich komme ___ Polen.', [de('Ich komme ___ Polen.'), pl(' (Pochodzę z Polski.)')], ['aus'], [de('aus')]),
+    germanChoice('Jak zapytasz „Gdzie mieszkasz?”?', [pl('Jak zapytasz „Gdzie mieszkasz?”?')], ['Wo wohnst du?', 'Wer bist du?', 'Wie alt bist du?'], 0, [de('Wo wohnst du?')], [de('Wo wohnst du?'), pl('pytamy o miejsce zamieszkania.')]),
+    germanExercise('Napisz po niemiecku: Mieszkam w Berlinie.', [pl('Napisz po niemiecku: Mieszkam w Berlinie.')], ['Ich wohne in Berlin.', 'Ich wohne in Berlin'], [de('Ich wohne in Berlin.')]),
+    germanChoice('Która odpowiedź znaczy „Bardzo dobrze”?', [pl('Która odpowiedź znaczy „Bardzo dobrze”?')], ['Es geht.', 'Sehr gut!', 'Nicht so gut.'], 1, [de('Sehr gut!')], [de('Sehr gut'), pl('to „bardzo dobrze”.')]),
+    germanExercise('Wpisz po niemiecku: Jak się masz?', [pl('Wpisz po niemiecku: Jak się masz?')], ['Wie geht’s?', 'Wie geht es dir?', 'Wie gehts?'], [de('Wie geht es dir?')]),
+    germanChoice('Jak jest po niemiecku „dwanaście”?', [pl('Jak jest po niemiecku „dwanaście”?')], ['zwölf', 'zwanzig', 'zehn'], 0, [de('zwölf')], [de('zwölf'), pl('to dwanaście.')]),
+    germanExercise('Wpisz liczbę 17 po niemiecku.', [pl('Wpisz liczbę siedemnaście po niemiecku.')], ['siebzehn'], [de('siebzehn')]),
+    germanChoice('Jak zapytasz o wiek?', [pl('Jak zapytasz o wiek?')], ['Wie alt bist du?', 'Wie heißt du?', 'Woher kommst du?'], 0, [de('Wie alt bist du?')], [de('Wie alt bist du?'), pl('znaczy „Ile masz lat?”.')]),
+    germanExercise('Uzupełnij odpowiedź: Ich ___ elf Jahre alt.', [de('Ich ___ elf Jahre alt.')], ['bin'], [de('bin')]),
+    germanChoice('Do kogo zwykle mówimy du?', [pl('Do kogo zwykle mówimy'), de('du?')], ['Do kolegi lub koleżanki', 'Zawsze do dyrektora', 'Do kilku dorosłych'], 0, [pl('Do kolegi lub koleżanki')], [de('du'), pl('jest formą nieoficjalną.')]),
+    germanChoice('Który zapis jest grzecznościowy?', [pl('Który zapis jest grzecznościowy?')], ['du', 'Sie', 'ich'], 1, [de('Sie')], [de('Sie'), pl('to grzecznościowe „Pan / Pani”.')]),
+    germanExercise('Uzupełnij odmianę sein: du ___.', [pl('Uzupełnij odmianę'), de('sein:'), de('du ___.')], ['bist'], [de('bist')]),
+    germanChoice('Jak jest „my jesteśmy” po niemiecku?', [pl('Jak jest „my jesteśmy” po niemiecku?')], ['wir sind', 'ihr seid', 'sie sind'], 0, [de('wir sind')], [de('wir sind'), pl('znaczy „my jesteśmy”.')]),
+    germanExercise('Jak po niemiecku jest „nazywać się”?', [pl('Jak po niemiecku jest „nazywać się”?')], ['heißen', 'heissen'], [de('heißen')]),
+    germanChoice('Co znaczy Ich habe ein Buch?', [pl('Co znaczy'), de('Ich habe ein Buch?')], ['Mam książkę.', 'Jestem książką.', 'Mieszkam z książką.'], 0, [pl('Mam książkę.')], [de('Ich habe'), pl('to „mam”, a'), de('ein Buch'), pl('to „książkę”.')]),
+    germanExercise('Połącz kraj i pochodzenie: Polen = ___ (po polsku)', [de('Polen'), pl('po polsku to…')], ['Polska'], [pl('Polska')]),
+  ],
+  quizQuestions: [
+    germanQuizChoice('Co znaczy Guten Abend?', [pl('Co znaczy'), de('Guten Abend?')], ['Dobry wieczór', 'Dzień dobry rano', 'Do widzenia', 'Dobranoc'], 0, [pl('Dobry wieczór')], [de('Guten Abend'), pl('mówimy wieczorem.')], 'Łatwe'),
+    germanQuizChoice('Jakie pożegnanie mówimy przed snem?', [pl('Jakie pożegnanie mówimy przed snem?')], ['Guten Tag!', 'Gute Nacht!', 'Bis bald!', 'Hallo!'], 1, [de('Gute Nacht!')], [de('Gute Nacht'), pl('znaczy „Dobranoc”.')], 'Łatwe'),
+    germanQuizChoice('Jak zapytasz o imię kolegi?', [pl('Jak zapytasz o imię kolegi?')], ['Wie heißt du?', 'Wo wohnst du?', 'Wie geht’s?', 'Wie alt bist du?'], 0, [de('Wie heißt du?')], [de('Wie heißt du?'), pl('znaczy „Jak masz na imię?”.')], 'Łatwe'),
+    germanQuizChoice('Wybierz poprawne: „Mam na imię Aleksander.”', [pl('Wybierz poprawne zdanie po niemiecku: „Mam na imię Aleksander.”')], ['Ich heiße Aleksander.', 'Ich komme Aleksander.', 'Ich bin heißen Aleksander.', 'Ich wohne Aleksander.'], 0, [de('Ich heiße Aleksander.')], [de('Ich heiße'), pl('znaczy „Mam na imię”.')], 'Łatwe'),
+    germanQuizChoice('Co znaczy Woher kommst du?', [pl('Co znaczy'), de('Woher kommst du?')], ['Gdzie mieszkasz?', 'Skąd jesteś?', 'Jak się masz?', 'Ile masz lat?'], 1, [pl('Skąd jesteś?')], [de('Woher kommst du?'), pl('pytamy o pochodzenie.')], 'Łatwe'),
+    germanQuizChoice('Uzupełnij: Ich komme ___ Polen.', [de('Uzupełnij: Ich komme ___ Polen.')], ['aus', 'in', 'bin', 'heiße'], 0, [de('aus')], [de('Ich komme aus Polen.'), pl('znaczy „Pochodzę z Polski”.')], 'Średnie'),
+    germanQuizChoice('Jak zapytasz „Gdzie mieszkasz?”?', [pl('Jak zapytasz „Gdzie mieszkasz?”?')], ['Wo wohnst du?', 'Woher kommst du?', 'Wer bist du?', 'Wie heißt du?'], 0, [de('Wo wohnst du?')], [de('Wo wohnst du?'), pl('pytamy o miejsce zamieszkania.')], 'Łatwe'),
+    germanQuizChoice('Która odpowiedź znaczy „Jakoś leci”?', [pl('Która odpowiedź znaczy „Jakoś leci”?')], ['Sehr gut.', 'Es geht.', 'Nicht so gut.', 'Guten Morgen.'], 1, [de('Es geht.')], [de('Es geht'), pl('znaczy „Jakoś leci”.')], 'Średnie'),
+    germanQuizChoice('Co znaczy zwölf?', [pl('Co znaczy'), de('zwölf?')], ['Dwanaście', 'Szesnaście', 'Dwadzieścia', 'Dwa'], 0, [pl('Dwanaście')], [de('zwölf'), pl('to dwanaście.')], 'Łatwe'),
+    germanQuizChoice('Jak jest 17 po niemiecku?', [pl('Jak jest siedemnaście po niemiecku?')], ['sieben', 'siebzehn', 'siebzig', 'sechzehn'], 1, [de('siebzehn')], [de('siebzehn'), pl('to siedemnaście.')], 'Średnie'),
+    germanQuizChoice('Jak zapytasz o wiek?', [pl('Jak zapytasz o wiek?')], ['Wie alt bist du?', 'Wo wohnst du?', 'Wie geht es dir?', 'Woher kommst du?'], 0, [de('Wie alt bist du?')], [de('Wie alt bist du?'), pl('znaczy „Ile masz lat?”.')], 'Łatwe'),
+    germanQuizChoice('Wybierz „Mam 10 lat.”', [pl('Wybierz zdanie „Mam 10 lat.”')], ['Ich bin zehn Jahre alt.', 'Ich habe zehn Jahre.', 'Ich heiße zehn.', 'Ich wohne zehn.'], 0, [de('Ich bin zehn Jahre alt.')], [pl('Wiek wyrażamy zwrotem'), de('Ich bin … Jahre alt.'), pl('.')], 'Średnie'),
+    germanQuizChoice('Która forma znaczy „ty jesteś”?', [pl('Która forma znaczy „ty jesteś”?')], ['ich bin', 'du bist', 'er ist', 'wir sind'], 1, [de('du bist')], [de('du bist'), pl('znaczy „ty jesteś”.')], 'Średnie'),
+    germanQuizChoice('Jak jest „wy jesteście” w odmianie sein?', [pl('Jak jest „wy jesteście” w odmianie'), de('sein?')], ['ihr seid', 'wir sind', 'sie sind', 'du bist'], 0, [de('ihr seid')], [de('ihr seid'), pl('znaczy „wy jesteście”.')], 'Średnie'),
+    germanQuizChoice('Które zdanie oznacza „Mam książkę”?', [pl('Które zdanie oznacza „Mam książkę”?')], ['Ich habe ein Buch.', 'Ich bin ein Buch.', 'Ich wohne ein Buch.', 'Ich heiße ein Buch.'], 0, [de('Ich habe ein Buch.')], [de('haben'), pl('znaczy „mieć”.')], 'Trudniejsze'),
+    germanQuizChoice('Z kim zwykle używamy du?', [pl('Z kim zwykle używamy'), de('du?')], ['Z kolegą', 'Z nieznanym dorosłym w oficjalnej rozmowie', 'Z grupą dorosłych zawsze', 'Tylko z nauczycielem'], 0, [pl('Z kolegą')], [de('du'), pl('jest formą nieformalną.')], 'Średnie'),
+    germanQuizChoice('Co oznacza wielkie Sie?', [pl('Co oznacza wielkie'), de('Sie?')], ['Grzeczne Pan / Pani / Państwo', 'Tylko „ona”', '„Ty” do kolegi', '„Ja”'], 0, [pl('Grzeczne Pan / Pani / Państwo')], [de('Sie'), pl('z wielkiej litery to forma grzecznościowa.')], 'Średnie'),
+    germanQuizChoice('Która para jest poprawna?', [pl('Która para jest poprawna?')], ['Polen — Polska', 'Deutschland — Austria', 'Österreich — Polska', 'Schweiz — Niemcy'], 0, [de('Polen —'), pl('Polska')], [de('Polen'), pl('to Polska.')], 'Średnie'),
+    germanQuizOpen('Wpisz po niemiecku: Cześć!', [pl('Wpisz po niemiecku: Cześć!')], ['Hallo!', 'Hallo'], [de('Hallo!')], [de('Hallo!'), pl('znaczy „Cześć!”.')], 'Łatwe'),
+    germanQuizOpen('Uzupełnij: Ich heiße ___. Wpisz swoje imię: Aleksander.', [de('Uzupełnij: Ich heiße ___. '), pl('Wpisz imię Aleksander.')], ['Aleksander', 'Aleksander.'], [de('Aleksander')], [de('Ich heiße Aleksander.'), pl('znaczy „Mam na imię Aleksander”.')], 'Łatwe'),
+    germanQuizOpen('Napisz po niemiecku: Pochodzę z Polski.', [pl('Napisz po niemiecku: Pochodzę z Polski.')], ['Ich komme aus Polen.', 'Ich komme aus Polen'], [de('Ich komme aus Polen.')], [de('Ich komme aus Polen.'), pl('to „Pochodzę z Polski”.')], 'Średnie'),
+    germanQuizOpen('Wpisz po niemiecku: Dobrze, dziękuję.', [pl('Wpisz po niemiecku: Dobrze, dziękuję.')], ['Gut, danke.', 'Gut danke', 'Gut, danke'], [de('Gut, danke.')], [de('Gut, danke.'), pl('to „Dobrze, dziękuję”.')], 'Średnie'),
+    germanQuizOpen('Wpisz liczbę 20 po niemiecku.', [pl('Wpisz liczbę dwadzieścia po niemiecku.')], ['zwanzig'], [de('zwanzig')], [de('zwanzig'), pl('to dwadzieścia.')], 'Łatwe'),
+    germanQuizOpen('Uzupełnij: wir ___. (sein – my jesteśmy)', [de('Uzupełnij: wir ___.'), pl('(sein – my jesteśmy)')], ['sind'], [de('sind')], [de('wir sind'), pl('znaczy „my jesteśmy”.')], 'Trudniejsze'),
+  ],
 };
 
 // Stare testy zostają w quiz.questions. Tu dokładamy brakujące pytania, tak
