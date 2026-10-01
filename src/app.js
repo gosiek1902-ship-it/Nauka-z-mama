@@ -1,5 +1,7 @@
 (function startNaukaZMama() {
 const subjects = window.NaukaZMamaSubjects;
+const expandedContent = window.NaukaZMamaExpandedContent ?? {};
+subjects.forEach((subject) => subject.lessons.forEach((lesson) => Object.assign(lesson, expandedContent[lesson.title] ?? {})));
 
 const STORAGE_KEY = 'nauka-z-mama-progress-v1';
 const subjectList = document.querySelector('#subject-list');
@@ -61,8 +63,9 @@ function emptyState(heading, text, icon = '🌱') {
   return `<div class="empty-state"><div class="empty-emoji">${icon}</div><h3>${heading}</h3><p>${text}</p></div>`;
 }
 
-function quizQuestions(quiz) {
-  return quiz.questions ?? [{ ...quiz, type: 'choice' }];
+function quizQuestions(lesson) {
+  const existing = lesson?.quiz?.questions ?? (lesson?.quiz ? [{ ...lesson.quiz, type: 'choice' }] : []);
+  return [...existing, ...(lesson?.quizQuestions ?? [])];
 }
 
 function questionCountLabel(count) {
@@ -77,31 +80,33 @@ function escapeHTML(value) {
 }
 
 function renderLessonNotes(lesson, index) {
-  if (!lesson.sections?.length) return `<article class="topic-card"><h4><span class="topic-number">${String(index + 1).padStart(2, '0')}</span>${escapeHTML(lesson.title)}</h4><p>${escapeHTML(lesson.summary)}</p><p style="margin-top:8px;color:#5d8066"><strong>Przykład:</strong> ${escapeHTML(lesson.examples)}</p></article>`;
-  const sections = lesson.sections.map((section) => `
+  const sections = (lesson.detailedNotes ?? []).map((section) => `
+    <section class="study-section"><h5>${escapeHTML(section.title)}</h5>${section.points?.length ? `<ul>${section.points.map((point) => `<li>${escapeHTML(point)}</li>`).join('')}</ul>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${escapeHTML(section.remember)}</p>` : ''}</section>`).join('');
+  const definitions = (lesson.definitions ?? []).map((definition) => `<div class="definition-card"><strong>${escapeHTML(definition.term)}</strong><p>${escapeHTML(definition.meaning)}</p>${definition.example ? `<small>Przykład: ${escapeHTML(definition.example)}</small>` : ''}</div>`).join('');
+  const vocabSections = (lesson.sections ?? []).map((section) => `
     <section class="vocab-section"><h5>${escapeHTML(section.title)}</h5>
       <div class="vocabulary-list">${section.vocabulary.map(({ en, pl }) => `<div class="vocabulary-pair"><strong>${escapeHTML(en)}</strong><span>${escapeHTML(pl)}</span></div>`).join('')}</div>
       <div class="sentence-examples"><strong>Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span>${escapeHTML(en)}</span><small>${escapeHTML(pl)}</small></div>`).join('')}</div>
     </section>`).join('');
-  return `<article class="topic-card language-lesson-card"><h4><span class="topic-number">${String(index + 1).padStart(2, '0')}</span>${escapeHTML(lesson.title)}</h4><p class="language-lesson-intro">${escapeHTML(lesson.summary)}</p><div class="vocab-sections">${sections}</div></article>`;
+  const oldNotes = !sections && !vocabSections ? `<p>${escapeHTML(lesson.summary ?? '')}</p>${lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(lesson.examples)}</p>` : ''}` : '';
+  return `<article class="topic-card study-lesson-card"><h4><span class="topic-number">${String(index + 1).padStart(2, '0')}</span>${escapeHTML(lesson.title)}</h4><p class="language-lesson-intro">${escapeHTML(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join('')}</ul></section>` : ''}</article>`;
 }
 
 function renderNotes() {
   const items = lessons();
   if (!items.length) return `
     <div class="panel-head"><div><h3>Moje notatki</h3><p class="panel-subtitle">Tutaj zbieramy najważniejsze rzeczy z lekcji.</p></div><span class="topic-badge">${activeSubject.icon} ${activeSubject.name}</span></div>
-    ${emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu notatki, przykłady i ćwiczenia, kiedy będziesz gotowa.', '📒')}`;
+    ${emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu notatki, przykłady i ćwiczenia, kiedy będziesz gotowy.', '📒')}`;
   return `
     <div class="panel-head"><div><h3>Moje notatki</h3><p class="panel-subtitle">Krótkie wyjaśnienia i przykłady, które pomagają zapamiętać.</p></div><span class="topic-badge">${items.length} ${items.length === 1 ? 'temat' : 'tematy'}</span></div>
     <div class="topic-grid">${items.map(renderLessonNotes).join('')}</div>`;
 }
 
 function renderQuiz() {
-  const available = lessons().map((lesson, index) => ({ lesson, index })).filter(({ lesson }) => lesson.quiz);
+  const available = lessons().map((lesson, index) => ({ lesson, index })).filter(({ lesson }) => quizQuestions(lesson).length);
   if (!available.length) return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">Sprawdź, co już pamiętasz. Bez stresu — pomyłki też uczą!</p></div><span class="topic-badge">🎯 Quiz</span></div>${emptyState('Quiz pojawi się z kolejnymi tematami', 'Do każdej lekcji możemy dodać krótkie pytanie i wyjaśnienie odpowiedzi. Wybierz temat w zakładce Notatki, aby zacząć.', '🧩')}`;
   const picked = available.find(({ index }) => index === lessonIndex) ?? available[available.length - 1];
-  const quiz = picked.lesson.quiz;
-  const questions = quizQuestions(quiz);
+  const questions = quizQuestions(picked.lesson);
   return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">${picked.lesson.title} · Odpowiedz na pytania, a potem sprawdź wynik.</p></div><span class="quiz-meta">${questions.length} ${questionCountLabel(questions.length)}</span></div>
     <div class="quiz-topic-picker" aria-label="Wybierz temat testu">${available.map(({ lesson, index }) => `<button type="button" class="quiz-topic-button ${index === picked.index ? 'active' : ''}" data-quiz-lesson="${index}" aria-pressed="${index === picked.index}">${escapeHTML(lesson.title)}</button>`).join('')}</div>
     <div class="quiz-question-list">${questions.map((question, questionIndex) => {
@@ -109,12 +114,15 @@ function renderQuiz() {
       const response = quizAnswers[questionIndex] ?? '';
       const answers = isOpen ? `<div class="open-answer-block"><label class="open-answer-row"><span>Twoja odpowiedź</span><input type="text" data-open-answer="${questionIndex}" value="${escapeHTML(response)}" placeholder="Wpisz odpowiedź" autocomplete="off" /></label><button type="button" class="open-answer-check" data-check-open="${questionIndex}">Sprawdź</button></div>`
         : `<div class="answer-list">${question.answers.map((answer, answerIndex) => `<button type="button" class="answer-option ${response === answerIndex ? 'selected' : ''}" data-choice="${questionIndex}" data-value="${answerIndex}" ${quizGraded ? 'disabled' : ''}>${String.fromCharCode(65 + answerIndex)}. &nbsp;${escapeHTML(answer)}</button>`).join('')}</div>`;
-      return `<article class="quiz-question-card"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${escapeHTML(question.question)}</p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
+      const level = question.level ?? ['Łatwe', 'Średnie', 'Trudniejsze'][questionIndex % 3];
+      return `<article class="quiz-question-card"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${escapeHTML(question.question)} <small class="question-level">${escapeHTML(level)}</small></p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
     }).join('')}</div>
     <div class="quiz-submit-row"><button class="action-button quiz-submit" type="button" data-check-quiz ${quizGraded ? 'disabled' : ''}>Sprawdź odpowiedzi <span>✓</span></button><div id="quiz-score" class="quiz-score" role="status"></div></div>`;
 }
 
 function renderCheatsheet() {
+  const sheet = currentLesson()?.cheatSheet;
+  if (sheet?.length) return `<div class="panel-head"><div><h3>💡 Ściąga: ${escapeHTML(currentLesson().title)}</h3><p class="panel-subtitle">Szybka karta przed sprawdzianem.</p></div><span class="topic-badge">Powtórz w 2 minuty</span></div><div class="cheat-grid">${sheet.map((section) => `<section class="cheat-card"><h4>${escapeHTML(section.title)}</h4>${section.items?.length ? `<dl>${section.items.map((item) => `<div><dt>${escapeHTML(item.label)}</dt><dd>${escapeHTML(item.text)}</dd></div>`).join('')}</dl>` : ''}${section.rule ? `<p class="cheat-rule"><strong>Reguła:</strong> ${escapeHTML(section.rule)}</p>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${escapeHTML(section.remember)}</p>` : ''}</section>`).join('')}</div>`;
   const facts = currentLesson()?.cheatFacts;
   if (!facts?.length) return `<div class="panel-head"><div><h3>Ściąga do zapamiętania</h3><p class="panel-subtitle">Najważniejsze zasady w jednym miejscu.</p></div><span class="topic-badge">💡 Przydatne!</span></div>${emptyState('Najważniejsze wskazówki będą tutaj', 'Gdy dodamy tematy lekcji, zbierzemy tu krótkie reguły, definicje i sposoby na zapamiętanie.', '✨')}`;
   return `<div class="panel-head"><div><h3>Ściąga: ${currentLesson().title}</h3><p class="panel-subtitle">Krótko i na temat — rzuć okiem przed powtórką.</p></div><span class="topic-badge">💡 Zapamiętaj</span></div><div class="fact-list">${facts.map((fact, index) => `<div class="fact-row"><b>${index + 1}.</b><span>${fact}</span></div>`).join('')}</div>`;
@@ -122,17 +130,21 @@ function renderCheatsheet() {
 
 function renderReview() {
   const items = lessons();
-  if (!items.length) return `<div class="panel-head"><div><h3>Powtórka</h3><p class="panel-subtitle">Zaznacz temat po przypomnieniu go sobie.</p></div><span class="topic-badge">🔁 Utrwalamy</span></div>${emptyState('Powtórka czeka na pierwsze tematy', 'Kiedy pojawią się lekcje, znajdziesz tu ich listę. Odhaczaj tematy, które już powtórzyłaś!', '🌼')}`;
+  if (!items.length) return `<div class="panel-head"><div><h3>Powtórka</h3><p class="panel-subtitle">Zaznacz temat po przypomnieniu go sobie.</p></div><span class="topic-badge">🔁 Utrwalamy</span></div>${emptyState('Powtórka czeka na pierwsze tematy', 'Kiedy pojawią się lekcje, znajdziesz tu ich listę. Odhaczaj tematy, które już powtórzyłeś!', '🌼')}`;
   const doneCount = items.filter((_, index) => progress.done[lessonKey(index)]).length;
   const reviewExercises = currentLesson()?.reviewExercises ?? [];
   const topicPicker = items.length > 1 ? `<div class="quiz-topic-picker" aria-label="Wybierz temat powtórki">${items.map((lesson, index) => `<button type="button" class="quiz-topic-button ${index === lessonIndex ? 'active' : ''}" data-review-lesson="${index}" aria-pressed="${index === lessonIndex}">${escapeHTML(lesson.title)}</button>`).join('')}</div>` : '';
   const exercises = reviewExercises.length ? `<div class="review-exercises"><h4>Krótka powtórka: ${escapeHTML(currentLesson().title)}</h4>${reviewExercises.map((exercise, index) => {
     const key = `${activeSubject.id}:${lessonIndex}:${index}`;
     const result = reviewResults[key];
+    const isChoice = exercise.type === 'choice' || exercise.type === 'truefalse';
     const feedback = result === undefined ? '' : result
       ? 'Brawo! To dobra odpowiedź! 🌟'
-      : `Spróbuj jeszcze raz. ${escapeHTML(exercise.hint ?? '')}`;
-    return `<div class="review-exercise"><label for="review-answer-${index}">${escapeHTML(exercise.prompt)}</label><div class="review-answer-controls"><input id="review-answer-${index}" type="text" data-review-answer="${index}" value="${escapeHTML(reviewAnswers[key] ?? '')}" placeholder="Wpisz odpowiedź" autocomplete="off" /><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button></div><div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div></div>`;
+      : `Spróbuj jeszcze raz. ${escapeHTML(exercise.hint ?? '')} ${isChoice ? `Odpowiedź: ${escapeHTML(exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz'))}.` : exercise.acceptedAnswers?.length ? `Odpowiedź: ${escapeHTML(exercise.acceptedAnswers.join(' lub '))}.` : ''}`;
+    const field = isChoice
+      ? `<div class="review-choice-list">${(exercise.options ?? ['Prawda', 'Fałsz']).map((option, optionIndex) => `<button type="button" class="review-choice ${reviewAnswers[key] === optionIndex ? 'selected' : ''}" data-review-choice="${index}" data-review-value="${optionIndex}">${escapeHTML(option)}</button>`).join('')}</div><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button>`
+      : `<div class="review-answer-controls"><input id="review-answer-${index}" type="text" data-review-answer="${index}" value="${escapeHTML(reviewAnswers[key] ?? '')}" placeholder="${exercise.type === 'open' ? 'Odpowiedz własnymi słowami' : 'Wpisz odpowiedź'}" autocomplete="off" /><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button></div>`;
+    return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${escapeHTML(exercise.prompt)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div></div>`;
   }).join('')}</div>` : '';
   return `<div class="panel-head"><div><h3>Powtórka</h3><p class="panel-subtitle">Przypomnij sobie temat i zaznacz go jako powtórzony.</p></div><span class="topic-badge">🔁 Małe kroki!</span></div>
     ${topicPicker}${exercises}
@@ -189,7 +201,15 @@ function renderPanel() {
     const exercise = currentLesson()?.reviewExercises?.[exerciseIndex];
     const key = `${activeSubject.id}:${lessonIndex}:${exerciseIndex}`;
     const answer = reviewAnswers[key] ?? '';
-    reviewResults[key] = (exercise?.acceptedAnswers ?? []).some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer));
+    const isChoice = exercise?.type === 'choice' || exercise?.type === 'truefalse';
+    const expected = isChoice ? exercise.correct : exercise?.acceptedAnswers ?? [];
+    reviewResults[key] = isChoice ? Number(answer) === Number(expected) : expected.some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer));
+    renderPanel();
+  }));
+  panel.querySelectorAll('[data-review-choice]').forEach((button) => button.addEventListener('click', () => {
+    const key = `${activeSubject.id}:${lessonIndex}:${button.dataset.reviewChoice}`;
+    reviewAnswers[key] = Number(button.dataset.reviewValue);
+    delete reviewResults[key];
     renderPanel();
   }));
   panel.querySelectorAll('[data-review]').forEach((checkbox) => checkbox.addEventListener('change', () => {
@@ -209,7 +229,7 @@ function questionExplanation(question) {
 }
 
 function gradeOpenQuestion(questionIndex) {
-  const question = quizQuestions(currentLesson()?.quiz ?? {}).at(questionIndex);
+  const question = quizQuestions(currentLesson()).at(questionIndex);
   if (!question || question.type !== 'open') return;
   const answer = quizAnswers[questionIndex] ?? '';
   const acceptedAnswers = question.acceptedAnswers ?? [];
@@ -231,9 +251,8 @@ function gradeOpenQuestion(questionIndex) {
 }
 
 function gradeQuiz() {
-  const quiz = currentLesson()?.quiz;
-  if (!quiz || quizGraded) return;
-  const questions = quizQuestions(quiz);
+  const questions = quizQuestions(currentLesson());
+  if (!questions.length || quizGraded) return;
   let correctCount = 0;
   let answeredCount = 0;
 
