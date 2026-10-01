@@ -1,29 +1,41 @@
 # Aleksander Kozdra – Uczę się po swojemu
 
-Przyjazna, osobista aplikacja edukacyjna Aleksandra dla ucznia 5 klasy. Działa w nowoczesnej przeglądarce i nie wymaga instalowania bibliotek.
+Przyjazna aplikacja do nauki dla ucznia klasy 5. Postępy są zapisywane lokalnie w przeglądarce; aplikacja nie wymaga konta.
 
-## Uruchomienie
+## Uruchomienie wersji internetowej
 
-Otwórz `index.html` w przeglądarce. Możesz też uruchomić serwer lokalny z katalogu projektu:
+To statyczna aplikacja. Otwórz `index.html` w przeglądarce albo uruchom lokalny serwer w katalogu projektu, na przykład:
 
 ```sh
-python -m http.server 8000 --bind 127.0.0.1
+npx serve .
 ```
 
-Następnie otwórz <http://localhost:8000>.
+Netlify może nadal publikować projekt z katalogu głównego repozytorium. Pliki `manifest.webmanifest` i `service-worker.js` zapewniają instalację PWA i buforowanie podstawowych zasobów do pracy offline.
 
-## Struktura
+## Przygotowanie Androida
 
-- `index.html` — szkielet strony i dostępne zakładki
-- `styles.css` — responsywny, przyjazny interfejs
-- `src/app.js` — nawigacja, notatki, quiz i zapisywanie postępu
-- `src/subjects.js` — katalog przedmiotów i podstawowe treści lekcji
-- `src/expanded-content.js` — rozszerzone notatki, ściągi, ćwiczenia i dodatkowe pytania dla lekcji
+Wymagane są Node.js 20 lub nowszy, npm, Android Studio oraz Android SDK/JDK skonfigurowane w Android Studio.
 
-## Dodawanie tematów
+```sh
+npm install
+npx cap add android
+npx cap sync android
+```
 
-W `src/subjects.js` znajdź przedmiot i dodaj obiekt do jego tablicy `lessons`. Każda lekcja może zawierać `summary`, `examples`, `detailedNotes`, `definitions`, `importantFacts`, `cheatSheet`, `reviewExercises` i `quizQuestions`. Wspierane są także wcześniejsze pola `quiz`, `cheatFacts` i `sections`.
+Projekt Android korzysta z tej samej aplikacji webowej i tych samych materiałów. Oficjalna grafika w `assets/icon.png` jest źródłem ikon; rozmiary PWA są dołączone w repozytorium. Po dodaniu platformy wygeneruj zasoby Androida z tej grafiki:
 
-Rozszerzenia istniejących lekcji można dopisać w `src/expanded-content.js`, pod kluczem równym pełnemu tytułowi lekcji. `detailedNotes` to krótkie sekcje z polami `title`, `points`, `example` i `remember`; `definitions` przechowują `term`, `meaning` i opcjonalny `example`; `cheatSheet` zawiera karty z `title`, `items`, `rule`, `example` i `remember`. `reviewExercises` obsługuje typy `choice`, `truefalse`, `blank`, `complete`, `open` i `translate`. `quizQuestions` rozszerza dotychczasowy test; pytanie zamknięte ma cztery odpowiedzi i indeks `correct` od zera, a otwarte listę `acceptedAnswers` oraz krótkie `explanation`.
+```sh
+npm run android:icons
+```
 
-Postęp w powtórkach jest przechowywany w pamięci przeglądarki na tym urządzeniu.
+## Budowanie APK
+
+Po przygotowaniu środowiska Android zbuduj debug APK:
+
+```sh
+npm run android:debug
+```
+
+Gotowy plik będzie w `android/app/build/outputs/apk/debug/app-debug.apk`. Skrypt `android:debug` odświeża webowe pliki i synchronizuje je przed kompilacją. APK nie jest przechowywany w repozytorium.
+
+Identyfikator aplikacji: `pl.tomagro.aleksanderuczesie`.

@@ -1,0 +1,7 @@
+node_modules/
+.pnpm-store/
+www/
+android/.gradle/
+android/local.properties
+android/**/build/
+*.apk
