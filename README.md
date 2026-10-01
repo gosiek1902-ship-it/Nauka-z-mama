@@ -1,6 +1,6 @@
-# Nauka z mamą
+# Aleksander Kozdra – Uczę się po swojemu
 
-Przyjazna aplikacja edukacyjna dla ucznia 5 klasy. Działa w nowoczesnej przeglądarce i nie wymaga instalowania bibliotek.
+Przyjazna, osobista aplikacja edukacyjna Aleksandra dla ucznia 5 klasy. Działa w nowoczesnej przeglądarce i nie wymaga instalowania bibliotek.
 
 ## Uruchomienie
 
