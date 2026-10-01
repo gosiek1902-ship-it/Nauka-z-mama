@@ -30,6 +30,10 @@ let progress = loadProgress();
 let appData = loadAppData();
 let pendingResetAction = null;
 let toastTimer = null;
+let speechQueue = [];
+let speechQueueIndex = 0;
+let speechRunId = 0;
+let speechPaused = false;
 
 function loadProgress() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? { done: {} }; }
@@ -252,17 +256,151 @@ function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
 
+function renderSpeechText(value) {
+  if (!Array.isArray(value)) return escapeHTML(value ?? '');
+  return value.map((fragment) => `<span lang="${escapeHTML(normalizeSpeechLanguage(fragment.lang))}">${escapeHTML(fragment.text ?? '')}</span>`).join(' ');
+}
+
+const SPEECH_BLOCK_TAGS = new Set(['ARTICLE', 'DIV', 'H2', 'H3', 'H4', 'H5', 'LI', 'P', 'SECTION']);
+const SPEECH_SKIP_CLASSES = new Set(['learning-tools', 'question-level', 'question-number', 'quiz-meta', 'feedback', 'oral-counter']);
+const SPEECH_LANGUAGE_MARKERS = {
+  pl: new Set('jak po angielsku powiedzieć wybierz wybierzcie uzupełnij uzupełnij zdanie wpisz poprawną poprawny odpowiedź odpowiedzi co znaczy który która które ile gdzie kiedy przetłumacz słowo zaznacz przykład przykłady zapamiętaj ważne podsumowanie prawda fałsz'.split(' ')),
+  en: new Set('the what which choose correct answer complete fill sentence translate word write select is are my your this that where when who does have has can do'.split(' ')),
+  de: new Set('der die das ist sind was wie wo wer und nicht ich du mein meine welches welche welcher passt bedeutet wähle ergänze übersetze kreuze richtig antwort satz'.split(' ')),
+};
+
+function defaultSpeechLanguage() {
+  if (activeSubject.id === 'angielski') return 'en-GB';
+  if (activeSubject.id === 'niemiecki') return 'de-DE';
+  return 'pl-PL';
+}
+
+function normalizeSpeechLanguage(language, fallback = defaultSpeechLanguage()) {
+  const value = String(language ?? '').trim().toLowerCase();
+  if (value.startsWith('pl')) return 'pl-PL';
+  if (value === 'en' || value.startsWith('en-gb')) return 'en-GB';
+  if (value.startsWith('en-us')) return 'en-US';
+  if (value.startsWith('en')) return 'en-GB';
+  if (value.startsWith('de')) return 'de-DE';
+  return fallback;
+}
+
+function detectSpeechLanguage(text, fallback) {
+  if (/[äöüß]/i.test(text)) return 'de-DE';
+  if (/[ąćęłńóśźż]/i.test(text)) return 'pl-PL';
+  const words = String(text).toLowerCase().match(/[a-zäöüßąćęłńóśźż]+/g) ?? [];
+  const scores = { pl: 0, en: 0, de: 0 };
+  for (const word of words) {
+    for (const language of Object.keys(SPEECH_LANGUAGE_MARKERS)) {
+      if (SPEECH_LANGUAGE_MARKERS[language].has(word)) scores[language] += 1;
+    }
+  }
+  const winner = Object.keys(scores).sort((left, right) => scores[right] - scores[left])[0];
+  return scores[winner] ? normalizeSpeechLanguage(winner) : fallback;
+}
+
+function splitSpeechText(text, fallbackLanguage) {
+  const parts = String(text).match(/[^.!?;:\n]+[.!?;:]?|[.!?;:]+/g) ?? [];
+  return parts.map((part) => ({ text: part.replace(/\s+/g, ' ').trim(), lang: detectSpeechLanguage(part, fallbackLanguage) })).filter((part) => part.text);
+}
+
+function collectSpeechFragments(root) {
+  if (!root) return [];
+  const fallbackLanguage = defaultSpeechLanguage();
+  const fragments = [];
+  const append = (text, language) => {
+    const clean = String(text).replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    const lang = normalizeSpeechLanguage(language, fallbackLanguage);
+    const previous = fragments.at(-1);
+    if (previous?.lang === lang) previous.text = `${previous.text} ${clean}`;
+    else fragments.push({ text: clean, lang });
+  };
+  const visit = (node, inheritedLanguage = '') => {
+    if (node.nodeType === 3) {
+      const text = node.nodeValue ?? '';
+      if (inheritedLanguage) append(text, inheritedLanguage);
+      else splitSpeechText(text, fallbackLanguage).forEach(({ text: part, lang }) => append(part, lang));
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const tag = node.tagName;
+    if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SCRIPT', 'STYLE', 'SVG'].includes(tag)) return;
+    if (node.getAttribute?.('aria-hidden') === 'true') return;
+    if ([...SPEECH_SKIP_CLASSES].some((name) => node.classList?.contains(name))) return;
+    const explicitLanguage = node.getAttribute?.('lang') || inheritedLanguage;
+    if (SPEECH_BLOCK_TAGS.has(tag) && fragments.length) append('', explicitLanguage || fallbackLanguage);
+    for (const child of node.childNodes ?? []) visit(child, explicitLanguage);
+  };
+  visit(root);
+  return fragments;
+}
+
+function findSpeechVoice(language) {
+  const voices = window.speechSynthesis.getVoices();
+  const prefix = language.slice(0, 2).toLowerCase();
+  const candidates = voices.filter((voice) => voice.lang?.toLowerCase().startsWith(`${prefix}-`));
+  if (prefix === 'en') {
+    return candidates.find((voice) => voice.lang.toLowerCase().startsWith('en-gb'))
+      ?? candidates.find((voice) => voice.lang.toLowerCase().startsWith('en-us'))
+      ?? candidates[0];
+  }
+  return candidates.find((voice) => voice.lang.toLowerCase().startsWith(`${language.slice(0, 2)}-${language.slice(3).toLowerCase()}`)) ?? candidates[0];
+}
+
+function speakNextFragment(runId = speechRunId) {
+  if (runId !== speechRunId || speechPaused || speechQueueIndex >= speechQueue.length) return;
+  const fragment = speechQueue[speechQueueIndex++];
+  const utterance = new window.SpeechSynthesisUtterance(fragment.text);
+  utterance.lang = fragment.lang;
+  utterance.voice = findSpeechVoice(fragment.lang);
+  utterance.onend = () => speakNextFragment(runId);
+  utterance.onerror = (event) => {
+    if (event.error !== 'canceled' && event.error !== 'interrupted') speakNextFragment(runId);
+  };
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeechPlayback() {
+  speechRunId += 1;
+  speechQueue = [];
+  speechQueueIndex = 0;
+  speechPaused = false;
+  window.speechSynthesis?.cancel();
+}
+
+function startSpeechPlayback() {
+  if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return;
+  stopSpeechPlayback();
+  speechQueue = collectSpeechFragments(panel.querySelector('.learning-content-body'));
+  speechQueueIndex = 0;
+  speakNextFragment(speechRunId);
+}
+
+function pauseSpeechPlayback() {
+  if (!('speechSynthesis' in window)) return;
+  speechPaused = true;
+  window.speechSynthesis.pause();
+}
+
+function resumeSpeechPlayback() {
+  if (!('speechSynthesis' in window)) return;
+  speechPaused = false;
+  window.speechSynthesis.resume();
+  if (!window.speechSynthesis.speaking && speechQueueIndex < speechQueue.length) speakNextFragment(speechRunId);
+}
+
 function renderLessonNotes(lesson, index) {
   const sections = (lesson.detailedNotes ?? []).map((section) => `
-    <section class="study-section"><h5>${escapeHTML(section.title)}</h5>${section.points?.length ? `<ul>${section.points.map((point) => `<li>${escapeHTML(point)}</li>`).join('')}</ul>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${escapeHTML(section.remember)}</p>` : ''}</section>`).join('');
-  const definitions = (lesson.definitions ?? []).map((definition) => `<div class="definition-card"><strong>${escapeHTML(definition.term)}</strong><p>${escapeHTML(definition.meaning)}</p>${definition.example ? `<small>Przykład: ${escapeHTML(definition.example)}</small>` : ''}</div>`).join('');
+    <section class="study-section"><h5>${escapeHTML(section.title)}</h5>${section.points?.length ? `<ul>${section.points.map((point) => `<li>${renderSpeechText(point)}</li>`).join('')}</ul>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${renderSpeechText(section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${renderSpeechText(section.remember)}</p>` : ''}</section>`).join('');
+  const definitions = (lesson.definitions ?? []).map((definition) => `<div class="definition-card"><strong>${renderSpeechText(definition.term)}</strong><p>${renderSpeechText(definition.meaning)}</p>${definition.example ? `<small>Przykład: ${renderSpeechText(definition.example)}</small>` : ''}</div>`).join('');
   const vocabSections = (lesson.sections ?? []).map((section) => `
     <section class="vocab-section"><h5>${escapeHTML(section.title)}</h5>
-      <div class="vocabulary-list">${section.vocabulary.map(({ en, pl }) => `<div class="vocabulary-pair"><strong>${escapeHTML(en)}</strong><span>${escapeHTML(pl)}</span></div>`).join('')}</div>
-      <div class="sentence-examples"><strong>Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span>${escapeHTML(en)}</span><small>${escapeHTML(pl)}</small></div>`).join('')}</div>
+      <div class="vocabulary-list">${section.vocabulary.map(({ en, pl }) => `<div class="vocabulary-pair"><strong lang="en">${escapeHTML(en)}</strong><span lang="pl">${escapeHTML(pl)}</span></div>`).join('')}</div>
+      <div class="sentence-examples"><strong>Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span lang="en">${escapeHTML(en)}</span><small lang="pl">${escapeHTML(pl)}</small></div>`).join('')}</div>
     </section>`).join('');
-  const oldNotes = !sections && !vocabSections && lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(lesson.examples)}</p>` : '';
-  return `<div class="study-lesson-content"><p class="language-lesson-intro">${escapeHTML(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join('')}</ul></section>` : ''}</div>`;
+  const oldNotes = !sections && !vocabSections && lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${renderSpeechText(lesson.examples)}</p>` : '';
+  return `<div class="study-lesson-content"><p class="language-lesson-intro">${renderSpeechText(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${renderSpeechText(fact)}</li>`).join('')}</ul></section>` : ''}</div>`;
 }
 
 function renderNotes() {
@@ -301,7 +439,7 @@ function renderMaterialContent() {
   if (!lesson) return renderTopicList();
   const titles = { notes: '📖 NOTATKI', cheatsheet: '🧠 ŚCIĄGA', practice: '✏️ ĆWICZENIA', review: '🔄 POWTÓRKA', quiz: '📝 SPRAWDZIAN', oral: '🎯 NAUKA Z MAMĄ' };
   const renderers = { notes: renderNotes, cheatsheet: renderCheatsheet, practice: renderPractice, review: renderReview, quiz: renderQuiz, oral: renderOral };
-  const tools = `<div class="learning-tools">${activeTab === 'notes' ? '<button type="button" data-read-notes>🔊 Przeczytaj</button><button type="button" data-stop-reading>⏹ Zatrzymaj</button>' : ''}<button type="button" data-print-material>🖨 Drukuj</button></div>`;
+  const tools = `<div class="learning-tools"><button type="button" data-read-notes>🔊 Przeczytaj</button><button type="button" data-pause-reading>⏸ Pauza</button><button type="button" data-resume-reading>▶ Wznów</button><button type="button" data-stop-reading>⏹ Zatrzymaj</button><button type="button" data-print-material>🖨 Drukuj</button></div>`;
   return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="materials">← ${escapeHTML(lesson.title)}</button><button type="button" class="learning-back-button secondary" data-nav="topics">← Wróć do tematów</button><button type="button" class="learning-back-button secondary" data-nav="subjects">← Wszystkie przedmioty</button></div><div class="learning-material-heading"><h3>${titles[activeTab]}</h3><p>${escapeHTML(lesson.title)}</p></div>${tools}<div class="learning-content-body">${renderers[activeTab]()}</div>`;
 }
 
@@ -316,17 +454,17 @@ function renderQuiz() {
       const answers = isOpen ? `<div class="open-answer-block"><label class="open-answer-row"><span>Twoja odpowiedź</span><input type="text" data-open-answer="${questionIndex}" value="${escapeHTML(response)}" placeholder="Wpisz odpowiedź" autocomplete="off" /></label><button type="button" class="open-answer-check" data-check-open="${questionIndex}">Sprawdź</button></div>`
         : `<div class="answer-list">${question.answers.map((answer, answerIndex) => `<button type="button" class="answer-option ${response === answerIndex ? 'selected' : ''}" data-choice="${questionIndex}" data-value="${answerIndex}" ${quizGraded ? 'disabled' : ''}>${String.fromCharCode(65 + answerIndex)}. &nbsp;${escapeHTML(answer)}</button>`).join('')}</div>`;
       const level = question.level ?? ['Łatwe', 'Średnie', 'Trudniejsze'][questionIndex % 3];
-      return `<article class="quiz-question-card" id="quiz-question-${questionIndex}"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${escapeHTML(question.question)} <small class="question-level">${escapeHTML(level)}</small></p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
+      return `<article class="quiz-question-card" id="quiz-question-${questionIndex}"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${renderSpeechText(question.question)} <small class="question-level">${escapeHTML(level)}</small></p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
     }).join('')}</div>
     <div class="quiz-submit-row"><button class="action-button quiz-submit" type="button" data-check-quiz ${quizGraded ? 'disabled' : ''}>Sprawdź odpowiedzi <span>✓</span></button><div id="quiz-score" class="quiz-score" role="status"></div></div>`;
 }
 
 function renderCheatsheet() {
   const sheet = currentLesson()?.cheatSheet;
-  if (sheet?.length) return `<div class="panel-head"><div><h3>💡 Ściąga: ${escapeHTML(currentLesson().title)}</h3><p class="panel-subtitle">Szybka karta przed sprawdzianem.</p></div><span class="topic-badge">Powtórz w 2 minuty</span></div><div class="cheat-grid">${sheet.map((section) => `<section class="cheat-card"><h4>${escapeHTML(section.title)}</h4>${section.items?.length ? `<dl>${section.items.map((item) => `<div><dt>${escapeHTML(item.label)}</dt><dd>${escapeHTML(item.text)}</dd></div>`).join('')}</dl>` : ''}${section.rule ? `<p class="cheat-rule"><strong>Reguła:</strong> ${escapeHTML(section.rule)}</p>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${escapeHTML(section.remember)}</p>` : ''}</section>`).join('')}</div>`;
+  if (sheet?.length) return `<div class="panel-head"><div><h3>💡 Ściąga: ${escapeHTML(currentLesson().title)}</h3><p class="panel-subtitle">Szybka karta przed sprawdzianem.</p></div><span class="topic-badge">Powtórz w 2 minuty</span></div><div class="cheat-grid">${sheet.map((section) => `<section class="cheat-card"><h4>${escapeHTML(section.title)}</h4>${section.items?.length ? `<dl>${section.items.map((item) => `<div><dt>${renderSpeechText(item.label)}</dt><dd>${renderSpeechText(item.text)}</dd></div>`).join('')}</dl>` : ''}${section.rule ? `<p class="cheat-rule"><strong>Reguła:</strong> ${renderSpeechText(section.rule)}</p>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${renderSpeechText(section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${renderSpeechText(section.remember)}</p>` : ''}</section>`).join('')}</div>`;
   const facts = currentLesson()?.cheatFacts;
   if (!facts?.length) return `<div class="panel-head"><div><h3>Ściąga do zapamiętania</h3><p class="panel-subtitle">Najważniejsze zasady w jednym miejscu.</p></div><span class="topic-badge">💡 Przydatne!</span></div>${emptyState('Ten materiał będzie dostępny po dodaniu treści.', 'Wróć do wyboru innego materiału albo tematu.', '✨')}`;
-  return `<div class="panel-head"><div><h3>Ściąga: ${currentLesson().title}</h3><p class="panel-subtitle">Krótko i na temat — rzuć okiem przed powtórką.</p></div><span class="topic-badge">💡 Zapamiętaj</span></div><div class="fact-list">${facts.map((fact, index) => `<div class="fact-row"><b>${index + 1}.</b><span>${fact}</span></div>`).join('')}</div>`;
+  return `<div class="panel-head"><div><h3>Ściąga: ${currentLesson().title}</h3><p class="panel-subtitle">Krótko i na temat — rzuć okiem przed powtórką.</p></div><span class="topic-badge">💡 Zapamiętaj</span></div><div class="fact-list">${facts.map((fact, index) => `<div class="fact-row"><b>${index + 1}.</b><span>${renderSpeechText(fact)}</span></div>`).join('')}</div>`;
 }
 
 function renderReview(isPractice = false) {
@@ -341,17 +479,17 @@ function renderReview(isPractice = false) {
     const isChoice = exercise.type === 'choice' || exercise.type === 'truefalse';
     const feedback = result === undefined ? '' : result
       ? 'Brawo! To dobra odpowiedź! 🌟'
-      : `Spróbuj jeszcze raz. ${escapeHTML(exercise.hint ?? '')} ${isChoice ? `Odpowiedź: ${escapeHTML(exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz'))}.` : exercise.acceptedAnswers?.length ? `Odpowiedź: ${escapeHTML(exercise.acceptedAnswers.join(' lub '))}.` : ''}`;
+      : `Spróbuj jeszcze raz. ${renderSpeechText(exercise.hint ?? '')} ${isChoice ? `Odpowiedź: ${escapeHTML(exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz'))}.` : exercise.acceptedAnswers?.length ? `Odpowiedź: ${escapeHTML(exercise.acceptedAnswers.join(' lub '))}.` : ''}`;
     const field = isChoice
       ? `<div class="review-choice-list">${(exercise.options ?? ['Prawda', 'Fałsz']).map((option, optionIndex) => `<button type="button" class="review-choice ${reviewAnswers[key] === optionIndex ? 'selected' : ''}" data-review-choice="${index}" data-review-value="${optionIndex}">${escapeHTML(option)}</button>`).join('')}</div><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button>`
       : `<div class="review-answer-controls"><input id="review-answer-${index}" type="text" data-review-answer="${index}" value="${escapeHTML(reviewAnswers[key] ?? '')}" placeholder="${exercise.type === 'open' ? 'Odpowiedz własnymi słowami' : 'Wpisz odpowiedź'}" autocomplete="off" /><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button></div>`;
     const knownAnswer = isChoice ? exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : exercise.acceptedAnswers?.join(' lub ');
     const answerReveal = knownAnswer ? `<details class="review-answer-reveal"><summary>▶️ Pokaż odpowiedź</summary><p>${escapeHTML(knownAnswer)}</p></details>` : '';
-    return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${escapeHTML(exercise.prompt)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div>${answerReveal}</div>`;
+    return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${renderSpeechText(exercise.prompt)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div>${answerReveal}</div>`;
   }).join('')}</div>` : '';
   const quickFacts = [...(lesson.importantFacts ?? []), ...(lesson.definitions ?? []).map((definition) => `${definition.term}: ${definition.meaning}`)];
   return `<div class="panel-head"><div><h3>${escapeHTML(lesson.title)}</h3><p class="panel-subtitle">${isPractice ? 'Poćwicz bez presji. Każda próba pomaga.' : 'Krótkie pytania, pojęcia i zasady do utrwalenia.'}</p></div><span class="topic-badge">${isPractice ? '✏️ Ćwiczenia' : '🔁 Powtórka'}</span></div>
-    ${!isPractice && quickFacts.length ? `<section class="review-key-facts"><h4>Najważniejsze do powtórzenia</h4>${quickFacts.map((fact) => `<p>${escapeHTML(fact)}</p>`).join('')}</section>` : ''}${exercises || emptyState('Ćwiczenia pojawią się po dodaniu materiału', 'W tym temacie nie ma jeszcze ćwiczeń do sprawdzenia.', '🌱')}
+    ${!isPractice && quickFacts.length ? `<section class="review-key-facts"><h4>Najważniejsze do powtórzenia</h4>${quickFacts.map((fact) => `<p>${renderSpeechText(fact)}</p>`).join('')}</section>` : ''}${exercises || emptyState('Ćwiczenia pojawią się po dodaniu materiału', 'W tym temacie nie ma jeszcze ćwiczeń do sprawdzenia.', '🌱')}
     <label class="review-row"><span><strong>Oznacz temat jako powtórzony</strong><small>${escapeHTML(lesson.title)}</small></span><input class="review-check" type="checkbox" data-review="${lessonIndex}" ${progress.done[lessonKey(lessonIndex)] ? 'checked' : ''} aria-label="Oznacz ${escapeHTML(lesson.title)} jako powtórzony" /></label>
     <div class="review-progress">🌟 Powtórzone tematy: ${doneCount} z ${items.length}</div><p class="gentle-message">Co jeszcze trzeba powtórzyć?</p>`;
 }
@@ -378,7 +516,7 @@ function renderOral() {
   if (!questions.length) return emptyState('Pytania ustne pojawią się po dodaniu materiału', 'Możecie wtedy spokojnie ćwiczyć razem.', '🎯');
   if (oralIndex >= questions.length) return `<div class="oral-session-end"><h3>Gotowe! 🌱</h3><p>Dzisiaj przećwiczyliście ${oralSessionDone} pytań.</p><p>Do powtórzenia zostało ${appData.errors.filter((item) => !item.mastered).length}.</p><button type="button" data-reset-oral>Jeszcze raz</button></div>`;
   const item = questions[oralIndex];
-  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${escapeHTML(item.prompt)}</h4>${item.answer ? `<details class="oral-answer"><summary>Pokaż przykładową odpowiedź</summary><p>${escapeHTML(item.answer)} ${item.explanation ? escapeHTML(item.explanation) : ''}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
+  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${renderSpeechText(item.prompt)}</h4>${item.answer ? `<details class="oral-answer"><summary>Pokaż przykładową odpowiedź</summary><p>${renderSpeechText(item.answer)} ${item.explanation ? renderSpeechText(item.explanation) : ''}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
 }
 
 function renderTopicLinks(entries, emptyText) {
@@ -416,6 +554,7 @@ function renderToday() {
 }
 
 function renderPanel() {
+  stopSpeechPlayback();
   const screens = { topics: renderTopicList, materials: renderMaterialMenu, content: renderMaterialContent, today: renderToday, favorites: renderFavorites, errors: renderErrors, fiveMinutes: renderFiveMinutes, progress: renderProgress };
   panel.innerHTML = (screens[activeView] ?? renderTopicList)();
   renderHomeDashboard();
@@ -506,15 +645,10 @@ function renderPanel() {
     if (config[resetType]) askResetConfirmation(config[resetType]);
   }));
   panel.querySelector('[data-print-material]')?.addEventListener('click', () => window.print());
-  panel.querySelector('[data-read-notes]')?.addEventListener('click', () => {
-    if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return;
-    window.speechSynthesis.cancel();
-    const text = panel.querySelector('.learning-content-body')?.innerText ?? '';
-    const utterance = new window.SpeechSynthesisUtterance(text);
-    utterance.lang = 'pl-PL';
-    window.speechSynthesis.speak(utterance);
-  });
-  panel.querySelector('[data-stop-reading]')?.addEventListener('click', () => window.speechSynthesis?.cancel());
+  panel.querySelector('[data-read-notes]')?.addEventListener('click', startSpeechPlayback);
+  panel.querySelector('[data-pause-reading]')?.addEventListener('click', pauseSpeechPlayback);
+  panel.querySelector('[data-resume-reading]')?.addEventListener('click', resumeSpeechPlayback);
+  panel.querySelector('[data-stop-reading]')?.addEventListener('click', stopSpeechPlayback);
   panel.querySelectorAll('[data-oral-result]').forEach((button) => button.addEventListener('click', () => {
     const item = oralQuestions()[oralIndex];
     if (!item) return;
