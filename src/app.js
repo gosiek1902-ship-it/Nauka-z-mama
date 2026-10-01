@@ -7,8 +7,9 @@ const panel = document.querySelector('#panel');
 const tabs = [...document.querySelectorAll('.tab')];
 let activeSubject = subjects.find((subject) => subject.id === 'matematyka') ?? subjects[0];
 let activeTab = 'notes';
-let lessonIndex = 0;
-let quizAnswered = false;
+let lessonIndex = activeSubject.lessons.length - 1;
+let quizAnswers = {};
+let quizGraded = false;
 let progress = loadProgress();
 
 function loadProgress() {
@@ -32,8 +33,9 @@ function renderSubjects() {
 
 function selectSubject(id) {
   activeSubject = subjects.find((subject) => subject.id === id) ?? subjects[0];
-  lessonIndex = 0;
-  quizAnswered = false;
+  lessonIndex = activeSubject.lessons.length - 1;
+  quizAnswers = {};
+  quizGraded = false;
   document.querySelector('#subject-title').textContent = activeSubject.name;
   document.querySelector('#current-subject-crumb').textContent = activeSubject.name;
   renderSubjects();
@@ -46,6 +48,14 @@ function currentLesson() { return lessons()[lessonIndex]; }
 
 function emptyState(heading, text, icon = '🌱') {
   return `<div class="empty-state"><div class="empty-emoji">${icon}</div><h3>${heading}</h3><p>${text}</p></div>`;
+}
+
+function quizQuestions(quiz) {
+  return quiz.questions ?? [{ ...quiz, type: 'choice' }];
+}
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
 
 function renderNotes() {
@@ -61,10 +71,19 @@ function renderNotes() {
 function renderQuiz() {
   const available = lessons().map((lesson, index) => ({ lesson, index })).filter(({ lesson }) => lesson.quiz);
   if (!available.length) return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">Sprawdź, co już pamiętasz. Bez stresu — pomyłki też uczą!</p></div><span class="topic-badge">🎯 Quiz</span></div>${emptyState('Quiz pojawi się z kolejnymi tematami', 'Do każdej lekcji możemy dodać krótkie pytanie i wyjaśnienie odpowiedzi. Wybierz temat w zakładce Notatki, aby zacząć.', '🧩')}`;
-  const picked = available[lessonIndex % available.length];
+  const picked = available.find(({ index }) => index === lessonIndex) ?? available[available.length - 1];
   const quiz = picked.lesson.quiz;
-  return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">${picked.lesson.title} · Wybierz jedną odpowiedź.</p></div><span class="quiz-meta">Pytanie 1 z 1</span></div>
-    <p class="quiz-question">${quiz.question}</p><div class="answer-list">${quiz.answers.map((answer, index) => `<button class="answer-option" data-answer="${index}">${String.fromCharCode(65 + index)}. &nbsp;${answer}</button>`).join('')}</div><div id="quiz-feedback" class="feedback" role="status"></div>`;
+  const questions = quizQuestions(quiz);
+  return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">${picked.lesson.title} · Odpowiedz na pytania, a potem sprawdź wynik.</p></div><span class="quiz-meta">${questions.length} ${questions.length === 1 ? 'pytanie' : 'pytania'}</span></div>
+    <div class="quiz-topic-picker" aria-label="Wybierz temat testu">${available.map(({ lesson, index }) => `<button type="button" class="quiz-topic-button ${index === picked.index ? 'active' : ''}" data-quiz-lesson="${index}" aria-pressed="${index === picked.index}">${escapeHTML(lesson.title)}</button>`).join('')}</div>
+    <div class="quiz-question-list">${questions.map((question, questionIndex) => {
+      const isOpen = question.type === 'open';
+      const response = quizAnswers[questionIndex] ?? '';
+      const answers = isOpen ? `<label class="open-answer-row"><span>Twoja odpowiedź</span><input type="text" data-open-answer="${questionIndex}" value="${escapeHTML(response)}" placeholder="Wpisz odpowiedź" autocomplete="off" ${quizGraded ? 'disabled' : ''} /></label>`
+        : `<div class="answer-list">${question.answers.map((answer, answerIndex) => `<button type="button" class="answer-option ${response === answerIndex ? 'selected' : ''}" data-choice="${questionIndex}" data-value="${answerIndex}" ${quizGraded ? 'disabled' : ''}>${String.fromCharCode(65 + answerIndex)}. &nbsp;${escapeHTML(answer)}</button>`).join('')}</div>`;
+      return `<article class="quiz-question-card"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${escapeHTML(question.question)}</p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
+    }).join('')}</div>
+    <div class="quiz-submit-row"><button class="action-button quiz-submit" type="button" data-check-quiz ${quizGraded ? 'disabled' : ''}>Sprawdź odpowiedzi <span>✓</span></button><div id="quiz-score" class="quiz-score" role="status"></div></div>`;
 }
 
 function renderCheatsheet() {
@@ -84,7 +103,21 @@ function renderReview() {
 
 function renderPanel() {
   panel.innerHTML = ({ notes: renderNotes, quiz: renderQuiz, cheatsheet: renderCheatsheet, review: renderReview })[activeTab]();
-  panel.querySelectorAll('[data-answer]').forEach((button) => button.addEventListener('click', () => answerQuiz(Number(button.dataset.answer))));
+  panel.querySelectorAll('[data-quiz-lesson]').forEach((button) => button.addEventListener('click', () => {
+    lessonIndex = Number(button.dataset.quizLesson);
+    quizAnswers = {};
+    quizGraded = false;
+    renderPanel();
+  }));
+  panel.querySelectorAll('[data-choice]').forEach((button) => button.addEventListener('click', () => {
+    const questionIndex = Number(button.dataset.choice);
+    quizAnswers[questionIndex] = Number(button.dataset.value);
+    panel.querySelectorAll(`[data-choice="${questionIndex}"]`).forEach((choice) => choice.classList.toggle('selected', choice === button));
+  }));
+  panel.querySelectorAll('[data-open-answer]').forEach((input) => input.addEventListener('input', () => {
+    quizAnswers[Number(input.dataset.openAnswer)] = input.value;
+  }));
+  panel.querySelector('[data-check-quiz]')?.addEventListener('click', gradeQuiz);
   panel.querySelectorAll('[data-review]').forEach((checkbox) => checkbox.addEventListener('change', () => {
     const index = Number(checkbox.dataset.review);
     progress.done[lessonKey(index)] = checkbox.checked;
@@ -93,26 +126,64 @@ function renderPanel() {
   }));
 }
 
-function answerQuiz(selected) {
-  if (quizAnswered) return;
-  quizAnswered = true;
-  const available = lessons().filter((lesson) => lesson.quiz);
-  const quiz = available[lessonIndex % available.length].quiz;
-  const correct = selected === quiz.correct;
-  panel.querySelectorAll('[data-answer]').forEach((button) => {
-    const index = Number(button.dataset.answer);
-    button.disabled = true;
-    if (index === quiz.correct) button.classList.add('correct');
-    else if (index === selected) button.classList.add('wrong');
+function normalizeAnswer(value) {
+  return String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('pl-PL').replace(/[\s\u00a0]/g, '');
+}
+
+function gradeQuiz() {
+  const quiz = currentLesson()?.quiz;
+  if (!quiz || quizGraded) return;
+  const questions = quizQuestions(quiz);
+  let correctCount = 0;
+  let answeredCount = 0;
+
+  questions.forEach((question, questionIndex) => {
+    const isOpen = question.type === 'open';
+    const rawAnswer = quizAnswers[questionIndex];
+    const answered = rawAnswer !== undefined && String(rawAnswer).trim() !== '';
+    const correct = answered && (isOpen
+      ? (question.acceptedAnswers ?? []).some((answer) => normalizeAnswer(answer) === normalizeAnswer(rawAnswer))
+      : Number(rawAnswer) === question.correct);
+    const feedback = panel.querySelector(`#quiz-feedback-${questionIndex}`);
+    const explanation = question.explanation ?? '';
+
+    if (!answered) {
+      feedback.textContent = 'Wybierz albo wpisz odpowiedź, aby sprawdzić to pytanie.';
+      feedback.classList.add('wrong');
+      return;
+    }
+
+    answeredCount += 1;
+    if (correct) correctCount += 1;
+    feedback.textContent = `${correct ? 'Dobrze! 🎉' : 'Jeszcze raz do tego wróć 🌱'} ${explanation}`;
+    feedback.classList.toggle('wrong', !correct);
+    if (isOpen) {
+      const input = panel.querySelector(`[data-open-answer="${questionIndex}"]`);
+      input.disabled = true;
+      input.classList.add(correct ? 'correct' : 'wrong');
+    } else {
+      panel.querySelectorAll(`[data-choice="${questionIndex}"]`).forEach((button) => {
+        const selected = Number(button.dataset.value);
+        button.disabled = true;
+        if (selected === question.correct) button.classList.add('correct');
+        else if (selected === Number(rawAnswer)) button.classList.add('wrong');
+      });
+    }
   });
-  const feedback = panel.querySelector('#quiz-feedback');
-  feedback.textContent = `${correct ? 'Brawo! 🎉' : 'Spróbuj zapamiętać! 🌱'} ${quiz.explanation}`;
-  if (!correct) feedback.classList.add('wrong');
+
+  quizGraded = answeredCount === questions.length;
+  const score = panel.querySelector('#quiz-score');
+  score.textContent = answeredCount < questions.length
+    ? `Na razie: ${correctCount} poprawnych z ${answeredCount} sprawdzonych. Uzupełnij pozostałe odpowiedzi.`
+    : `Twój wynik: ${correctCount} z ${questions.length}. ${correctCount === questions.length ? 'Brawo, świetna robota! 🌟' : 'Każda odpowiedź to okazja do nauki! 💛'}`;
+  const submit = panel.querySelector('[data-check-quiz]');
+  submit.disabled = quizGraded;
 }
 
 tabs.forEach((tab) => tab.addEventListener('click', () => {
   activeTab = tab.dataset.tab;
-  quizAnswered = false;
+  quizAnswers = {};
+  quizGraded = false;
   tabs.forEach((item) => {
     const selected = item === tab;
     item.classList.toggle('active', selected);

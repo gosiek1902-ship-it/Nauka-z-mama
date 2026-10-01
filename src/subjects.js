@@ -21,6 +21,42 @@ const subjectCatalog = [
       quiz: { question: 'Ile wynosi 3 + 2 × 4?', answers: ['20', '11', '14', '24'], correct: 1, explanation: 'Najpierw mnożenie: 2 × 4 = 8, a potem 3 + 8 = 11.' },
       cheatFacts: ['1. Nawiasy', '2. Mnożenie i dzielenie (od lewej do prawej)', '3. Dodawanie i odejmowanie (od lewej do prawej)'],
     },
+    {
+      title: 'Porównywanie i zapisywanie liczb',
+      summary: 'Liczby możemy zapisywać cyframi albo słowami. Żeby je porównać, najpierw sprawdź, ile mają cyfr. Jeśli tyle samo — porównuj cyfry od lewej strony, czyli od największego rzędu. Znak < oznacza „mniejsze”, > — „większe”, a = — „równe”.',
+      examples: '508 321 > 508 123, bo obie liczby mają sześć cyfr, a w setkach 3 jest większe niż 1. „Trzysta dwa tysiące pięćdziesiąt cztery” zapisujemy cyframi jako 302 054.',
+      cheatFacts: ['Więcej cyfr oznacza większą liczbę: 98 765 > 9 876.', 'Gdy liczby mają tyle samo cyfr, porównuj je od lewej do prawej.', 'Znak < czytamy „mniejsze”, > — „większe”, a = — „równe”.', 'Dla czytelności oddzielaj grupy trzech cyfr spacją, licząc od prawej strony.'],
+      quiz: {
+        questions: [
+          {
+            type: 'choice',
+            question: 'Która liczba jest największa?',
+            answers: ['405 612', '450 612', '405 621', '450 621'],
+            correct: 3,
+            explanation: '450 621 jest największa. Ma tyle samo cyfr co 450 612, ale w setkach 6 jest większe niż 1.',
+          },
+          {
+            type: 'choice',
+            question: 'Wybierz prawidłowy znak: 73 405 __ 73 450',
+            answers: ['<', '>', '=', 'Nie da się porównać'],
+            correct: 0,
+            explanation: '73 405 jest mniejsze niż 73 450, więc wstawiamy znak <.',
+          },
+          {
+            type: 'open',
+            question: 'Zapisz cyframi: „dwieście czterdzieści tysięcy siedemnaście”.',
+            acceptedAnswers: ['240 017', '240017'],
+            explanation: 'To 240 017: po 240 tysiącach zapisujemy jeszcze 17.',
+          },
+          {
+            type: 'open',
+            question: 'Wpisz znak <, > albo =: 82 099 __ 82 100',
+            acceptedAnswers: ['<'],
+            explanation: '82 099 jest o 1 mniejsze od 82 100, więc poprawny znak to <.',
+          },
+        ],
+      },
+    },
   ] },
   { id: 'historia', name: 'Historia', icon: '🏰', color: '#bd9a78', lessons: [] },
   { id: 'geografia', name: 'Geografia', icon: '🌍', color: '#65b6b3', lessons: [] },
