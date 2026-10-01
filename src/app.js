@@ -3,6 +3,7 @@ const subjects = window.NaukaZMamaSubjects;
 
 const STORAGE_KEY = 'nauka-z-mama-progress-v1';
 const subjectList = document.querySelector('#subject-list');
+const mobileSubjectSelect = document.querySelector('#mobile-subject-select');
 const panel = document.querySelector('#panel');
 const tabs = [...document.querySelectorAll('.tab')];
 let activeSubject = subjects.find((subject) => subject.id === 'matematyka') ?? subjects[0];
@@ -28,10 +29,16 @@ function renderSubjects() {
     <button class="subject-link ${subject.id === activeSubject.id ? 'active' : ''}" data-subject="${subject.id}" aria-current="${subject.id === activeSubject.id ? 'page' : 'false'}">
       <span class="subject-icon">${subject.icon}</span><span>${subject.name}</span>
     </button>`).join('');
+  mobileSubjectSelect.innerHTML = '<option value="" selected disabled>Wybierz przedmiot ▼</option>' + subjects.map((subject) => `<option value="${escapeHTML(subject.id)}">${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</option>`).join('');
+  mobileSubjectSelect.value = '';
   subjectList.querySelectorAll('[data-subject]').forEach((button) => {
     button.addEventListener('click', () => selectSubject(button.dataset.subject));
   });
 }
+
+mobileSubjectSelect.addEventListener('change', () => {
+  if (mobileSubjectSelect.value) selectSubject(mobileSubjectSelect.value);
+});
 
 function selectSubject(id) {
   activeSubject = subjects.find((subject) => subject.id === id) ?? subjects[0];
