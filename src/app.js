@@ -10,6 +10,8 @@ let activeTab = 'notes';
 let lessonIndex = activeSubject.lessons.length - 1;
 let quizAnswers = {};
 let quizGraded = false;
+let reviewAnswers = {};
+let reviewResults = {};
 let progress = loadProgress();
 
 function loadProgress() {
@@ -36,6 +38,8 @@ function selectSubject(id) {
   lessonIndex = activeSubject.lessons.length - 1;
   quizAnswers = {};
   quizGraded = false;
+  reviewAnswers = {};
+  reviewResults = {};
   document.querySelector('#subject-title').textContent = activeSubject.name;
   document.querySelector('#current-subject-crumb').textContent = activeSubject.name;
   renderSubjects();
@@ -54,8 +58,25 @@ function quizQuestions(quiz) {
   return quiz.questions ?? [{ ...quiz, type: 'choice' }];
 }
 
+function questionCountLabel(count) {
+  if (count === 1) return 'pytanie';
+  const lastDigit = count % 10;
+  const lastTwoDigits = count % 100;
+  return lastDigit >= 2 && lastDigit <= 4 && (lastTwoDigits < 12 || lastTwoDigits > 14) ? 'pytania' : 'pytań';
+}
+
 function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
+
+function renderLessonNotes(lesson, index) {
+  if (!lesson.sections?.length) return `<article class="topic-card"><h4><span class="topic-number">${String(index + 1).padStart(2, '0')}</span>${escapeHTML(lesson.title)}</h4><p>${escapeHTML(lesson.summary)}</p><p style="margin-top:8px;color:#5d8066"><strong>Przykład:</strong> ${escapeHTML(lesson.examples)}</p></article>`;
+  const sections = lesson.sections.map((section) => `
+    <section class="vocab-section"><h5>${escapeHTML(section.title)}</h5>
+      <div class="vocabulary-list">${section.vocabulary.map(({ en, pl }) => `<div class="vocabulary-pair"><strong>${escapeHTML(en)}</strong><span>${escapeHTML(pl)}</span></div>`).join('')}</div>
+      <div class="sentence-examples"><strong>Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span>${escapeHTML(en)}</span><small>${escapeHTML(pl)}</small></div>`).join('')}</div>
+    </section>`).join('');
+  return `<article class="topic-card language-lesson-card"><h4><span class="topic-number">${String(index + 1).padStart(2, '0')}</span>${escapeHTML(lesson.title)}</h4><p class="language-lesson-intro">${escapeHTML(lesson.summary)}</p><div class="vocab-sections">${sections}</div></article>`;
 }
 
 function renderNotes() {
@@ -65,7 +86,7 @@ function renderNotes() {
     ${emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu notatki, przykłady i ćwiczenia, kiedy będziesz gotowa.', '📒')}`;
   return `
     <div class="panel-head"><div><h3>Moje notatki</h3><p class="panel-subtitle">Krótkie wyjaśnienia i przykłady, które pomagają zapamiętać.</p></div><span class="topic-badge">${items.length} ${items.length === 1 ? 'temat' : 'tematy'}</span></div>
-    <div class="topic-grid">${items.map((lesson, index) => `<article class="topic-card"><h4><span class="topic-number">${String(index + 1).padStart(2, '0')}</span>${lesson.title}</h4><p>${lesson.summary}</p><p style="margin-top:8px;color:#5d8066"><strong>Przykład:</strong> ${lesson.examples}</p></article>`).join('')}</div>`;
+    <div class="topic-grid">${items.map(renderLessonNotes).join('')}</div>`;
 }
 
 function renderQuiz() {
@@ -74,7 +95,7 @@ function renderQuiz() {
   const picked = available.find(({ index }) => index === lessonIndex) ?? available[available.length - 1];
   const quiz = picked.lesson.quiz;
   const questions = quizQuestions(quiz);
-  return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">${picked.lesson.title} · Odpowiedz na pytania, a potem sprawdź wynik.</p></div><span class="quiz-meta">${questions.length} ${questions.length === 1 ? 'pytanie' : 'pytania'}</span></div>
+  return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">${picked.lesson.title} · Odpowiedz na pytania, a potem sprawdź wynik.</p></div><span class="quiz-meta">${questions.length} ${questionCountLabel(questions.length)}</span></div>
     <div class="quiz-topic-picker" aria-label="Wybierz temat testu">${available.map(({ lesson, index }) => `<button type="button" class="quiz-topic-button ${index === picked.index ? 'active' : ''}" data-quiz-lesson="${index}" aria-pressed="${index === picked.index}">${escapeHTML(lesson.title)}</button>`).join('')}</div>
     <div class="quiz-question-list">${questions.map((question, questionIndex) => {
       const isOpen = question.type === 'open';
@@ -96,7 +117,18 @@ function renderReview() {
   const items = lessons();
   if (!items.length) return `<div class="panel-head"><div><h3>Powtórka</h3><p class="panel-subtitle">Zaznacz temat po przypomnieniu go sobie.</p></div><span class="topic-badge">🔁 Utrwalamy</span></div>${emptyState('Powtórka czeka na pierwsze tematy', 'Kiedy pojawią się lekcje, znajdziesz tu ich listę. Odhaczaj tematy, które już powtórzyłaś!', '🌼')}`;
   const doneCount = items.filter((_, index) => progress.done[lessonKey(index)]).length;
+  const reviewExercises = currentLesson()?.reviewExercises ?? [];
+  const topicPicker = items.length > 1 ? `<div class="quiz-topic-picker" aria-label="Wybierz temat powtórki">${items.map((lesson, index) => `<button type="button" class="quiz-topic-button ${index === lessonIndex ? 'active' : ''}" data-review-lesson="${index}" aria-pressed="${index === lessonIndex}">${escapeHTML(lesson.title)}</button>`).join('')}</div>` : '';
+  const exercises = reviewExercises.length ? `<div class="review-exercises"><h4>Krótka powtórka: ${escapeHTML(currentLesson().title)}</h4>${reviewExercises.map((exercise, index) => {
+    const key = `${activeSubject.id}:${lessonIndex}:${index}`;
+    const result = reviewResults[key];
+    const feedback = result === undefined ? '' : result
+      ? 'Brawo! To dobra odpowiedź! 🌟'
+      : `Spróbuj jeszcze raz. ${escapeHTML(exercise.hint ?? '')}`;
+    return `<div class="review-exercise"><label for="review-answer-${index}">${escapeHTML(exercise.prompt)}</label><div class="review-answer-controls"><input id="review-answer-${index}" type="text" data-review-answer="${index}" value="${escapeHTML(reviewAnswers[key] ?? '')}" placeholder="Wpisz odpowiedź" autocomplete="off" /><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button></div><div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div></div>`;
+  }).join('')}</div>` : '';
   return `<div class="panel-head"><div><h3>Powtórka</h3><p class="panel-subtitle">Przypomnij sobie temat i zaznacz go jako powtórzony.</p></div><span class="topic-badge">🔁 Małe kroki!</span></div>
+    ${topicPicker}${exercises}
     ${items.map((lesson, index) => `<label class="review-row"><span><strong>${lesson.title}</strong><small>Otwórz Notatki, jeśli chcesz przeczytać je jeszcze raz.</small></span><input class="review-check" type="checkbox" data-review="${index}" ${progress.done[lessonKey(index)] ? 'checked' : ''} aria-label="Oznacz ${lesson.title} jako powtórzony" /></label>`).join('')}
     <div class="review-progress">🌟 Powtórzone tematy: ${doneCount} z ${items.length}</div>`;
 }
@@ -118,6 +150,26 @@ function renderPanel() {
     quizAnswers[Number(input.dataset.openAnswer)] = input.value;
   }));
   panel.querySelector('[data-check-quiz]')?.addEventListener('click', gradeQuiz);
+  panel.querySelectorAll('[data-review-lesson]').forEach((button) => button.addEventListener('click', () => {
+    lessonIndex = Number(button.dataset.reviewLesson);
+    renderPanel();
+  }));
+  panel.querySelectorAll('[data-review-answer]').forEach((input) => input.addEventListener('input', () => {
+    const key = `${activeSubject.id}:${lessonIndex}:${input.dataset.reviewAnswer}`;
+    reviewAnswers[key] = input.value;
+    delete reviewResults[key];
+    const feedback = panel.querySelector(`[data-check-review="${input.dataset.reviewAnswer}"]`)?.closest('.review-exercise')?.querySelector('.feedback');
+    if (feedback) { feedback.textContent = ''; feedback.classList.remove('wrong'); }
+    input.classList.remove('correct', 'wrong');
+  }));
+  panel.querySelectorAll('[data-check-review]').forEach((button) => button.addEventListener('click', () => {
+    const exerciseIndex = Number(button.dataset.checkReview);
+    const exercise = currentLesson()?.reviewExercises?.[exerciseIndex];
+    const key = `${activeSubject.id}:${lessonIndex}:${exerciseIndex}`;
+    const answer = reviewAnswers[key] ?? '';
+    reviewResults[key] = (exercise?.acceptedAnswers ?? []).some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer));
+    renderPanel();
+  }));
   panel.querySelectorAll('[data-review]').forEach((checkbox) => checkbox.addEventListener('change', () => {
     const index = Number(checkbox.dataset.review);
     progress.done[lessonKey(index)] = checkbox.checked;
