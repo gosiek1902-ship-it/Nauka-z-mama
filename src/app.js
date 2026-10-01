@@ -265,7 +265,7 @@ function renderSpeechText(value, fallbackLanguage = defaultSpeechLanguage()) {
 
 const SPEECH_BLOCK_TAGS = new Set(['ARTICLE', 'DIV', 'H2', 'H3', 'H4', 'H5', 'LI', 'P', 'SECTION']);
 const SPEECH_SKIP_TAGS = new Set(['BUTTON', 'INPUT', 'NAV', 'PROGRESS', 'SELECT', 'SUMMARY', 'TEXTAREA', 'SCRIPT', 'STYLE', 'SVG']);
-const SPEECH_SKIP_CLASSES = new Set(['learning-tools', 'question-level', 'question-number', 'quiz-meta', 'feedback', 'oral-counter', 'topic-learning-progress', 'review-row', 'review-progress', 'quiz-score', 'quiz-submit-row', 'subject-progress']);
+const SPEECH_SKIP_CLASSES = new Set(['learning-tools', 'panel-subtitle', 'topic-badge', 'question-level', 'question-number', 'quiz-meta', 'feedback', 'oral-counter', 'open-answer-row', 'topic-learning-progress', 'review-row', 'review-progress', 'quiz-score', 'quiz-submit-row', 'subject-progress']);
 
 function defaultSpeechLanguage() {
   const declared = currentLesson()?.speechLanguage ?? currentLesson()?.language
@@ -438,15 +438,15 @@ function resumeSpeechPlayback() {
 
 function renderLessonNotes(lesson, index) {
   const sections = (lesson.detailedNotes ?? []).map((section) => `
-    <section class="study-section"><h5>${renderSpeechText(section.titleSpeechSegments ?? section.title, 'pl-PL')}</h5>${section.points?.length ? `<ul>${section.points.map((point, pointIndex) => `<li>${renderSpeechText(section.pointSpeechSegments?.[pointIndex] ?? point, 'pl-PL')}</li>`).join('')}</ul>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${renderSpeechText(section.exampleSpeechSegments ?? section.example, 'pl-PL')}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${renderSpeechText(section.rememberSpeechSegments ?? section.remember, 'pl-PL')}</p>` : ''}</section>`).join('');
-  const definitions = (lesson.definitions ?? []).map((definition) => `<div class="definition-card"><strong>${renderSpeechText(definition.termSpeechSegments ?? definition.term)}</strong><p>${renderSpeechText(definition.meaningSpeechSegments ?? definition.meaning, 'pl-PL')}</p>${definition.example ? `<small>Przykład: ${renderSpeechText(definition.exampleSpeechSegments ?? definition.example)}</small>` : ''}</div>`).join('');
+    <section class="study-section"><h5>${renderSpeechText(section.titleSpeechSegments ?? section.title)}</h5>${section.points?.length ? `<ul>${section.points.map((point, pointIndex) => `<li>${renderSpeechText(section.pointSpeechSegments?.[pointIndex] ?? point)}</li>`).join('')}</ul>` : ''}${section.example ? `<p class="study-example"><strong lang="pl-PL">Przykład:</strong> ${renderSpeechText(section.exampleSpeechSegments ?? section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong lang="pl-PL">🧠 Zapamiętaj</strong><br>${renderSpeechText(section.rememberSpeechSegments ?? section.remember)}</p>` : ''}</section>`).join('');
+  const definitions = (lesson.definitions ?? []).map((definition) => `<div class="definition-card"><strong>${renderSpeechText(definition.termSpeechSegments ?? definition.term)}</strong><p>${renderSpeechText(definition.meaningSpeechSegments ?? definition.meaning)}</p>${definition.example ? `<small><span lang="pl-PL">Przykład:</span> ${renderSpeechText(definition.exampleSpeechSegments ?? definition.example)}</small>` : ''}</div>`).join('');
   const vocabSections = (lesson.sections ?? []).map((section) => `
-    <section class="vocab-section"><h5>${escapeHTML(section.title)}</h5>
+    <section class="vocab-section"><h5>${renderSpeechText(section.titleSpeechSegments ?? section.title)}</h5>
       <div class="vocabulary-list">${section.vocabulary.map(({ en, pl }) => `<div class="vocabulary-pair"><strong lang="en">${escapeHTML(en)}</strong><span lang="pl">${escapeHTML(pl)}</span></div>`).join('')}</div>
-      <div class="sentence-examples"><strong>Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span lang="en">${escapeHTML(en)}</span><small lang="pl">${escapeHTML(pl)}</small></div>`).join('')}</div>
+      <div class="sentence-examples"><strong lang="pl-PL">Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span lang="en">${escapeHTML(en)}</span><small lang="pl">${escapeHTML(pl)}</small></div>`).join('')}</div>
     </section>`).join('');
   const oldNotes = !sections && !vocabSections && lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${renderSpeechText(lesson.examples)}</p>` : '';
-  return `<div class="study-lesson-content"><p class="language-lesson-intro">${renderSpeechText(lesson.summarySpeechSegments ?? lesson.summary ?? '', 'pl-PL')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact, index) => `<li>${renderSpeechText(lesson.importantFactsSpeechSegments?.[index] ?? fact, 'pl-PL')}</li>`).join('')}</ul></section>` : ''}</div>`;
+  return `<div class="study-lesson-content"><p class="language-lesson-intro">${renderSpeechText(lesson.summarySpeechSegments ?? lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5 lang="pl-PL">📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5 lang="pl-PL">✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact, index) => `<li>${renderSpeechText(lesson.importantFactsSpeechSegments?.[index] ?? fact)}</li>`).join('')}</ul></section>` : ''}</div>`;
 }
 
 function renderNotes() {
@@ -493,25 +493,25 @@ function renderQuiz() {
   const lesson = currentLesson();
   const questions = quizQuestions(lesson);
   if (!questions.length) return `<div class="panel-head"><div><h3>Sprawdzian</h3><p class="panel-subtitle">Sprawdź, co już pamiętasz. Bez stresu — pomyłki też uczą!</p></div><span class="topic-badge">🎯 Test</span></div>${emptyState('Sprawdzian pojawi się z kolejnymi materiałami', 'Do tego tematu dodamy pytania, gdy będą gotowe.', '🧩')}`;
-  return `<div class="panel-head"><div><h3>${escapeHTML(lesson.title)}</h3><p class="panel-subtitle">Odpowiedz na pytania, a potem sprawdź wynik.</p></div><span class="quiz-meta">${questions.length} ${questionCountLabel(questions.length)}</span></div>
+  return `<div class="panel-head"><div><h3>${renderSpeechText(lesson.titleSpeechSegments ?? lesson.title)}</h3><p class="panel-subtitle" lang="pl-PL">Odpowiedz na pytania, a potem sprawdź wynik.</p></div><span class="quiz-meta">${questions.length} ${questionCountLabel(questions.length)}</span></div>
     <div class="quiz-question-list">${questions.map((question, questionIndex) => {
       const isOpen = question.type === 'open';
       const response = quizAnswers[questionIndex] ?? '';
       const answers = isOpen ? `<div class="open-answer-block"><label class="open-answer-row"><span>Twoja odpowiedź</span><input type="text" data-open-answer="${questionIndex}" value="${escapeHTML(response)}" placeholder="Wpisz odpowiedź" autocomplete="off" /></label><button type="button" class="open-answer-check" data-check-open="${questionIndex}">Sprawdź</button></div>`
         : `<div class="answer-list">${question.answers.map((answer, answerIndex) => `<button type="button" class="answer-option ${response === answerIndex ? 'selected' : ''}" data-choice="${questionIndex}" data-value="${answerIndex}" ${quizGraded ? 'disabled' : ''}>${String.fromCharCode(65 + answerIndex)}. &nbsp;${escapeHTML(answer)}</button>`).join('')}</div>`;
       const level = question.level ?? ['Łatwe', 'Średnie', 'Trudniejsze'][questionIndex % 3];
-      const promptSpeech = question.speechSegments ?? [{ text: question.question, lang: question.promptLanguage ?? 'pl-PL' }];
-      return `<article class="quiz-question-card" id="quiz-question-${questionIndex}"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${renderSpeechText(promptSpeech, 'pl-PL')} <small class="question-level">${escapeHTML(level)}</small></p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
+      const promptSpeech = question.speechSegments ?? [{ text: question.question, lang: question.promptLanguage ?? defaultSpeechLanguage() }];
+      return `<article class="quiz-question-card" id="quiz-question-${questionIndex}"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${renderSpeechText(promptSpeech)} <small class="question-level">${escapeHTML(level)}</small></p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
     }).join('')}</div>
     <div class="quiz-submit-row"><button class="action-button quiz-submit" type="button" data-check-quiz ${quizGraded ? 'disabled' : ''}>Sprawdź odpowiedzi <span>✓</span></button><div id="quiz-score" class="quiz-score" role="status"></div></div>`;
 }
 
 function renderCheatsheet() {
   const sheet = currentLesson()?.cheatSheet;
-  if (sheet?.length) return `<div class="panel-head"><div><h3>💡 Ściąga: ${escapeHTML(currentLesson().title)}</h3><p class="panel-subtitle">Szybka karta przed sprawdzianem.</p></div><span class="topic-badge">Powtórz w 2 minuty</span></div><div class="cheat-grid">${sheet.map((section) => `<section class="cheat-card"><h4>${renderSpeechText(section.titleSpeechSegments ?? section.title, 'pl-PL')}</h4>${section.items?.length ? `<dl>${section.items.map((item) => `<div><dt>${renderSpeechText(item.labelSpeechSegments ?? item.label)}</dt><dd>${renderSpeechText(item.textSpeechSegments ?? item.text, 'pl-PL')}</dd></div>`).join('')}</dl>` : ''}${section.rule ? `<p class="cheat-rule"><strong>Reguła:</strong> ${renderSpeechText(section.ruleSpeechSegments ?? section.rule, 'pl-PL')}</p>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${renderSpeechText(section.exampleSpeechSegments ?? section.example, 'pl-PL')}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${renderSpeechText(section.rememberSpeechSegments ?? section.remember, 'pl-PL')}</p>` : ''}</section>`).join('')}</div>`;
+  if (sheet?.length) return `<div class="panel-head"><div><h3><span lang="pl-PL">💡 Ściąga:</span> ${renderSpeechText(currentLesson().titleSpeechSegments ?? currentLesson().title)}</h3><p class="panel-subtitle" lang="pl-PL">Szybka karta przed sprawdzianem.</p></div><span class="topic-badge">Powtórz w 2 minuty</span></div><div class="cheat-grid">${sheet.map((section) => `<section class="cheat-card"><h4>${renderSpeechText(section.titleSpeechSegments ?? section.title)}</h4>${section.items?.length ? `<dl>${section.items.map((item) => `<div><dt>${renderSpeechText(item.labelSpeechSegments ?? item.label)}</dt><dd>${renderSpeechText(item.textSpeechSegments ?? item.text)}</dd></div>`).join('')}</dl>` : ''}${section.rule ? `<p class="cheat-rule"><strong lang="pl-PL">Reguła:</strong> ${renderSpeechText(section.ruleSpeechSegments ?? section.rule)}</p>` : ''}${section.example ? `<p class="study-example"><strong lang="pl-PL">Przykład:</strong> ${renderSpeechText(section.exampleSpeechSegments ?? section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong lang="pl-PL">🧠 Zapamiętaj</strong><br>${renderSpeechText(section.rememberSpeechSegments ?? section.remember)}</p>` : ''}</section>`).join('')}</div>`;
   const facts = currentLesson()?.cheatFacts;
   if (!facts?.length) return `<div class="panel-head"><div><h3>Ściąga do zapamiętania</h3><p class="panel-subtitle">Najważniejsze zasady w jednym miejscu.</p></div><span class="topic-badge">💡 Przydatne!</span></div>${emptyState('Ten materiał będzie dostępny po dodaniu treści.', 'Wróć do wyboru innego materiału albo tematu.', '✨')}`;
-  return `<div class="panel-head"><div><h3>Ściąga: ${currentLesson().title}</h3><p class="panel-subtitle">Krótko i na temat — rzuć okiem przed powtórką.</p></div><span class="topic-badge">💡 Zapamiętaj</span></div><div class="fact-list">${facts.map((fact, index) => `<div class="fact-row"><b>${index + 1}.</b><span>${renderSpeechText(fact, 'pl-PL')}</span></div>`).join('')}</div>`;
+  return `<div class="panel-head"><div><h3><span lang="pl-PL">Ściąga:</span> ${renderSpeechText(currentLesson().titleSpeechSegments ?? currentLesson().title)}</h3><p class="panel-subtitle" lang="pl-PL">Krótko i na temat — rzuć okiem przed powtórką.</p></div><span class="topic-badge">💡 Zapamiętaj</span></div><div class="fact-list">${facts.map((fact, index) => `<div class="fact-row"><b>${index + 1}.</b><span>${renderSpeechText(currentLesson().cheatFactSpeechSegments?.[index] ?? fact)}</span></div>`).join('')}</div>`;
 }
 
 function renderReview(isPractice = false) {
@@ -532,12 +532,12 @@ function renderReview(isPractice = false) {
       : `<div class="review-answer-controls"><input id="review-answer-${index}" type="text" data-review-answer="${index}" value="${escapeHTML(reviewAnswers[key] ?? '')}" placeholder="${exercise.type === 'open' ? 'Odpowiedz własnymi słowami' : 'Wpisz odpowiedź'}" autocomplete="off" /><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button></div>`;
     const knownAnswer = isChoice ? exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : exercise.acceptedAnswers?.join(' lub ');
     const answerReveal = knownAnswer ? `<details class="review-answer-reveal"><summary>▶️ Pokaż odpowiedź</summary><p>${renderSpeechText(exercise.answerSpeechSegments ?? knownAnswer)}</p></details>` : '';
-    const promptSpeech = exercise.speechSegments ?? [{ text: exercise.prompt, lang: exercise.promptLanguage ?? 'pl-PL' }];
-    return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${renderSpeechText(promptSpeech, 'pl-PL')}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div>${answerReveal}</div>`;
+    const promptSpeech = exercise.speechSegments ?? [{ text: exercise.prompt, lang: exercise.promptLanguage ?? defaultSpeechLanguage() }];
+    return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${renderSpeechText(promptSpeech)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div>${answerReveal}</div>`;
   }).join('')}</div>` : '';
   const quickFacts = [...(lesson.importantFacts ?? []), ...(lesson.definitions ?? []).map((definition) => `${definition.term}: ${definition.meaning}`)];
-  return `<div class="panel-head"><div><h3>${escapeHTML(lesson.title)}</h3><p class="panel-subtitle">${isPractice ? 'Poćwicz bez presji. Każda próba pomaga.' : 'Krótkie pytania, pojęcia i zasady do utrwalenia.'}</p></div><span class="topic-badge">${isPractice ? '✏️ Ćwiczenia' : '🔁 Powtórka'}</span></div>
-    ${!isPractice && quickFacts.length ? `<section class="review-key-facts"><h4>Najważniejsze do powtórzenia</h4>${quickFacts.map((fact) => `<p>${renderSpeechText(fact, 'pl-PL')}</p>`).join('')}</section>` : ''}${exercises || emptyState('Ćwiczenia pojawią się po dodaniu materiału', 'W tym temacie nie ma jeszcze ćwiczeń do sprawdzenia.', '🌱')}
+  return `<div class="panel-head"><div><h3>${renderSpeechText(lesson.titleSpeechSegments ?? lesson.title)}</h3><p class="panel-subtitle" lang="pl-PL">${isPractice ? 'Poćwicz bez presji. Każda próba pomaga.' : 'Krótkie pytania, pojęcia i zasady do utrwalenia.'}</p></div><span class="topic-badge">${isPractice ? '✏️ Ćwiczenia' : '🔁 Powtórka'}</span></div>
+    ${!isPractice && quickFacts.length ? `<section class="review-key-facts"><h4 lang="pl-PL">Najważniejsze do powtórzenia</h4>${quickFacts.map((fact) => `<p>${renderSpeechText(fact)}</p>`).join('')}</section>` : ''}${exercises || emptyState('Ćwiczenia pojawią się po dodaniu materiału', 'W tym temacie nie ma jeszcze ćwiczeń do sprawdzenia.', '🌱')}
     <label class="review-row"><span><strong>Oznacz temat jako powtórzony</strong><small>${escapeHTML(lesson.title)}</small></span><input class="review-check" type="checkbox" data-review="${lessonIndex}" ${progress.done[lessonKey(lessonIndex)] ? 'checked' : ''} aria-label="Oznacz ${escapeHTML(lesson.title)} jako powtórzony" /></label>
     <div class="review-progress">🌟 Powtórzone tematy: ${doneCount} z ${items.length}</div><p class="gentle-message">Co jeszcze trzeba powtórzyć?</p>`;
 }
@@ -551,12 +551,16 @@ function oralQuestions() {
     answer: question.type === 'open' ? (question.acceptedAnswers ?? []).join(' lub ') : question.answers?.[question.correct],
     explanation: question.explanation,
     speechSegments: question.speechSegments,
+    promptLanguage: question.promptLanguage,
+    explanationSpeechSegments: question.explanationSpeechSegments ?? (question.explanation ? [{ text: question.explanation, lang: question.explanationLanguage ?? 'pl-PL' }] : []),
     id: `oral-quiz-${index}`,
   })), ...(lesson?.reviewExercises ?? []).map((exercise, index) => ({
     prompt: exercise.prompt,
     answer: exercise.type === 'choice' || exercise.type === 'truefalse' ? exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : exercise.acceptedAnswers?.join(' lub '),
     explanation: exercise.hint,
     speechSegments: exercise.speechSegments,
+    promptLanguage: exercise.promptLanguage,
+    explanationSpeechSegments: exercise.hintSpeechSegments ?? (exercise.hint ? [{ text: exercise.hint, lang: exercise.hintLanguage ?? 'pl-PL' }] : []),
     id: `oral-review-${index}`,
   }))].filter((item) => item.prompt);
 }
@@ -566,8 +570,8 @@ function renderOral() {
   if (!questions.length) return emptyState('Pytania ustne pojawią się po dodaniu materiału', 'Możecie wtedy spokojnie ćwiczyć razem.', '🎯');
   if (oralIndex >= questions.length) return `<div class="oral-session-end"><h3>Gotowe! 🌱</h3><p>Dzisiaj przećwiczyliście ${oralSessionDone} pytań.</p><p>Do powtórzenia zostało ${appData.errors.filter((item) => !item.mastered).length}.</p><button type="button" data-reset-oral>Jeszcze raz</button></div>`;
   const item = questions[oralIndex];
-  const promptSpeech = item.speechSegments ?? [{ text: item.prompt, lang: 'pl-PL' }];
-  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${renderSpeechText(promptSpeech, 'pl-PL')}</h4>${item.answer ? `<details class="oral-answer"><summary>Pokaż przykładową odpowiedź</summary><p>${renderSpeechText(item.answer)} ${item.explanation ? renderSpeechText(item.explanation, 'pl-PL') : ''}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
+  const promptSpeech = item.speechSegments ?? [{ text: item.prompt, lang: item.promptLanguage ?? defaultSpeechLanguage() }];
+  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${renderSpeechText(promptSpeech)}</h4>${item.answer ? `<details class="oral-answer"><summary>Pokaż przykładową odpowiedź</summary><p>${renderSpeechText(item.answer)} ${renderSpeechText(item.explanationSpeechSegments ?? item.explanation ?? '')}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
 }
 
 function renderTopicLinks(entries, emptyText) {
