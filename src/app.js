@@ -262,46 +262,42 @@ function renderSpeechText(value) {
 }
 
 const SPEECH_BLOCK_TAGS = new Set(['ARTICLE', 'DIV', 'H2', 'H3', 'H4', 'H5', 'LI', 'P', 'SECTION']);
-const SPEECH_SKIP_CLASSES = new Set(['learning-tools', 'question-level', 'question-number', 'quiz-meta', 'feedback', 'oral-counter']);
-const SPEECH_LANGUAGE_MARKERS = {
-  pl: new Set('jak po angielsku powiedzieć wybierz wybierzcie uzupełnij uzupełnij zdanie wpisz poprawną poprawny odpowiedź odpowiedzi co znaczy który która które ile gdzie kiedy przetłumacz słowo zaznacz przykład przykłady zapamiętaj ważne podsumowanie prawda fałsz'.split(' ')),
-  en: new Set('the what which choose correct answer complete fill sentence translate word write select is are my your this that where when who does have has can do'.split(' ')),
-  de: new Set('der die das ist sind was wie wo wer und nicht ich du mein meine welches welche welcher passt bedeutet wähle ergänze übersetze kreuze richtig antwort satz'.split(' ')),
-};
+const SPEECH_SKIP_TAGS = new Set(['BUTTON', 'INPUT', 'NAV', 'PROGRESS', 'SELECT', 'SUMMARY', 'TEXTAREA', 'SCRIPT', 'STYLE', 'SVG']);
+const SPEECH_SKIP_CLASSES = new Set(['learning-tools', 'question-level', 'question-number', 'quiz-meta', 'feedback', 'oral-counter', 'topic-learning-progress', 'review-row', 'review-progress', 'quiz-score', 'quiz-submit-row', 'subject-progress']);
 
 function defaultSpeechLanguage() {
+  const declared = currentLesson()?.speechLanguage ?? currentLesson()?.language
+    ?? activeSubject.speechLanguage ?? activeSubject.language;
+  const declaredLanguage = String(declared ?? '').trim().toLowerCase().replace('_', '-');
+  if (/^(pl|polish|polski)/.test(declaredLanguage)) return 'pl-PL';
+  if (/^(en|english)/.test(declaredLanguage)) return 'en-GB';
+  if (/^(de|german|deutsch|niemiecki)/.test(declaredLanguage)) return 'de-DE';
   if (activeSubject.id === 'angielski') return 'en-GB';
   if (activeSubject.id === 'niemiecki') return 'de-DE';
   return 'pl-PL';
 }
 
 function normalizeSpeechLanguage(language, fallback = defaultSpeechLanguage()) {
-  const value = String(language ?? '').trim().toLowerCase();
-  if (value.startsWith('pl')) return 'pl-PL';
-  if (value === 'en' || value.startsWith('en-gb')) return 'en-GB';
-  if (value.startsWith('en-us')) return 'en-US';
+  const value = String(language ?? '').trim().toLowerCase().replace('_', '-');
+  if (/^(pl|polish|polski)/.test(value)) return 'pl-PL';
   if (value.startsWith('en')) return 'en-GB';
-  if (value.startsWith('de')) return 'de-DE';
+  if (/^(de|german|deutsch|niemiecki)/.test(value)) return 'de-DE';
   return fallback;
 }
 
-function detectSpeechLanguage(text, fallback) {
-  if (/[äöüß]/i.test(text)) return 'de-DE';
-  if (/[ąćęłńóśźż]/i.test(text)) return 'pl-PL';
-  const words = String(text).toLowerCase().match(/[a-zäöüßąćęłńóśźż]+/g) ?? [];
-  const scores = { pl: 0, en: 0, de: 0 };
-  for (const word of words) {
-    for (const language of Object.keys(SPEECH_LANGUAGE_MARKERS)) {
-      if (SPEECH_LANGUAGE_MARKERS[language].has(word)) scores[language] += 1;
-    }
-  }
-  const winner = Object.keys(scores).sort((left, right) => scores[right] - scores[left])[0];
-  return scores[winner] ? normalizeSpeechLanguage(winner) : fallback;
+function cleanSpeechText(text) {
+  return String(text ?? '')
+    .replace(/[#*0-9]\uFE0F?\u20E3/gu, '')
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\p{So}\uFE0E\uFE0F\u200D\u20E3]/gu, '')
+    .replace(/[\u2022\u25AA-\u25AB\u25B6-\u25B7\u25CB\u25CF\u2190-\u21FF]/gu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 function splitSpeechText(text, fallbackLanguage) {
-  const parts = String(text).match(/[^.!?;:\n]+[.!?;:]?|[.!?;:]+/g) ?? [];
-  return parts.map((part) => ({ text: part.replace(/\s+/g, ' ').trim(), lang: detectSpeechLanguage(part, fallbackLanguage) })).filter((part) => part.text);
+  const clean = cleanSpeechText(text);
+  const parts = clean.match(/[^.!?;:\n]+[.!?;:]?|[.!?;:]+/g) ?? [];
+  return parts.map((part) => ({ text: part.replace(/\s+/g, ' ').trim(), lang: fallbackLanguage })).filter((part) => part.text);
 }
 
 function collectSpeechFragments(root) {
@@ -309,7 +305,7 @@ function collectSpeechFragments(root) {
   const fallbackLanguage = defaultSpeechLanguage();
   const fragments = [];
   const append = (text, language) => {
-    const clean = String(text).replace(/\s+/g, ' ').trim();
+    const clean = cleanSpeechText(text).replace(/\s+/g, ' ');
     if (!clean) return;
     const lang = normalizeSpeechLanguage(language, fallbackLanguage);
     const previous = fragments.at(-1);
@@ -325,33 +321,40 @@ function collectSpeechFragments(root) {
     }
     if (node.nodeType !== 1) return;
     const tag = node.tagName;
-    if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SCRIPT', 'STYLE', 'SVG'].includes(tag)) return;
+    if (SPEECH_SKIP_TAGS.has(tag)) return;
+    if (tag === 'DETAILS' && !node.open) return;
     if (node.getAttribute?.('aria-hidden') === 'true') return;
     if ([...SPEECH_SKIP_CLASSES].some((name) => node.classList?.contains(name))) return;
     const explicitLanguage = node.getAttribute?.('lang') || inheritedLanguage;
     if (SPEECH_BLOCK_TAGS.has(tag) && fragments.length) append('', explicitLanguage || fallbackLanguage);
     for (const child of node.childNodes ?? []) visit(child, explicitLanguage);
   };
-  visit(root);
+  (Array.isArray(root) ? root : [root]).filter(Boolean).forEach((node) => visit(node));
   return fragments;
 }
 
 function findSpeechVoice(language) {
+  const requested = normalizeSpeechLanguage(language);
+  const baseLanguage = requested.slice(0, 2);
   const voices = window.speechSynthesis.getVoices();
-  const prefix = language.slice(0, 2).toLowerCase();
-  const candidates = voices.filter((voice) => voice.lang?.toLowerCase().startsWith(`${prefix}-`));
-  if (prefix === 'en') {
-    return candidates.find((voice) => voice.lang.toLowerCase().startsWith('en-gb'))
-      ?? candidates.find((voice) => voice.lang.toLowerCase().startsWith('en-us'))
-      ?? candidates[0];
+  const matching = voices.filter((voice) => voice.lang?.toLowerCase().replace('_', '-').startsWith(`${baseLanguage}-`));
+  const normalizedVoiceLang = (voice) => voice.lang.toLowerCase().replace('_', '-');
+  const exact = matching.find((voice) => normalizedVoiceLang(voice) === requested.toLowerCase())
+    ?? matching.find((voice) => normalizedVoiceLang(voice).startsWith(`${requested.toLowerCase()}-`));
+  if (exact) return exact;
+  if (baseLanguage === 'en') {
+    return matching.find((voice) => normalizedVoiceLang(voice).startsWith('en-us')) ?? matching[0]
+      ?? voices.find((voice) => voice.lang?.toLowerCase() === 'en');
   }
-  return candidates.find((voice) => voice.lang.toLowerCase().startsWith(`${language.slice(0, 2)}-${language.slice(3).toLowerCase()}`)) ?? candidates[0];
+  return matching[0] ?? voices.find((voice) => voice.lang?.toLowerCase() === baseLanguage);
 }
 
 function speakNextFragment(runId = speechRunId) {
   if (runId !== speechRunId || speechPaused || speechQueueIndex >= speechQueue.length) return;
   const fragment = speechQueue[speechQueueIndex++];
-  const utterance = new window.SpeechSynthesisUtterance(fragment.text);
+  const text = cleanSpeechText(fragment.text);
+  if (!text) return speakNextFragment(runId);
+  const utterance = new window.SpeechSynthesisUtterance(text);
   utterance.lang = fragment.lang;
   utterance.voice = findSpeechVoice(fragment.lang);
   utterance.onend = () => speakNextFragment(runId);
@@ -372,7 +375,10 @@ function stopSpeechPlayback() {
 function startSpeechPlayback() {
   if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return;
   stopSpeechPlayback();
-  speechQueue = collectSpeechFragments(panel.querySelector('.learning-content-body'));
+  const body = panel.querySelector('.learning-content-body');
+  const lessonTitle = panel.querySelector('.learning-material-heading p');
+  const titleIsAlreadyInBody = body?.textContent?.includes(currentLesson()?.title);
+  speechQueue = collectSpeechFragments(titleIsAlreadyInBody ? [body] : [lessonTitle, body]);
   speechQueueIndex = 0;
   speakNextFragment(speechRunId);
 }
