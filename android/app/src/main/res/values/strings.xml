@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Aleksander Kozdra – Uczę się po swojemu</string>
+    <string name="title_activity_main">Aleksander Kozdra – Uczę się po swojemu</string>
+    <string name="package_name">pl.tomagro.aleksanderuczesie</string>
+    <string name="custom_url_scheme">pl.tomagro.aleksanderuczesie</string>
+</resources>

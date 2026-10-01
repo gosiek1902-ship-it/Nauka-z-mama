@@ -14,7 +14,7 @@ Netlify może nadal publikować projekt z katalogu głównego repozytorium. Plik
 
 ## Przygotowanie Androida
 
-Wymagane są Node.js 20 lub nowszy, npm, Android Studio oraz Android SDK/JDK skonfigurowane w Android Studio.
+Wymagane są Node.js 20 lub nowszy, npm, JDK 21 oraz Android SDK (Android Studio nie jest konieczne). Zainstaluj Android SDK Command-line Tools, platform-tools, platformę Android API 36 i Build Tools 36.0.0. Ustaw `JAVA_HOME`, `ANDROID_HOME` i dodaj katalogi `bin` JDK, `platform-tools` oraz `cmdline-tools/latest/bin` do `PATH`.
 
 ```sh
 npm install
@@ -36,6 +36,6 @@ Po przygotowaniu środowiska Android zbuduj debug APK:
 npm run android:debug
 ```
 
-Gotowy plik będzie w `android/app/build/outputs/apk/debug/app-debug.apk`. Skrypt `android:debug` odświeża webowe pliki i synchronizuje je przed kompilacją. APK nie jest przechowywany w repozytorium.
+Gotowy plik będzie w `android/app/build/outputs/apk/debug/app-debug.apk`. Skrypt `android:debug` odświeża webowe pliki i synchronizuje je przed kompilacją. W repozytorium dołączono również kopię `Aleksander-Kozdra-Ucze-sie-po-swojemu.apk` w katalogu głównym.
 
 Identyfikator aplikacji: `pl.tomagro.aleksanderuczesie`.

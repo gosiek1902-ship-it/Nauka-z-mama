@@ -5,3 +5,4 @@ android/.gradle/
 android/local.properties
 android/**/build/
 *.apk
+!Aleksander-Kozdra-Ucze-sie-po-swojemu.apk
