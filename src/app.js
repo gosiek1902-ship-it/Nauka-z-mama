@@ -151,7 +151,13 @@ function renderPanel() {
   panel.querySelectorAll('[data-choice]').forEach((button) => button.addEventListener('click', () => {
     const questionIndex = Number(button.dataset.choice);
     quizAnswers[questionIndex] = Number(button.dataset.value);
-    panel.querySelectorAll(`[data-choice="${questionIndex}"]`).forEach((choice) => choice.classList.toggle('selected', choice === button));
+    panel.querySelectorAll(`[data-choice="${questionIndex}"]`).forEach((choice) => {
+      choice.classList.remove('selected', 'correct', 'wrong');
+      if (choice === button) choice.classList.add('selected');
+    });
+    const feedback = panel.querySelector(`#quiz-feedback-${questionIndex}`);
+    feedback.textContent = '';
+    feedback.classList.remove('wrong');
   }));
   panel.querySelectorAll('[data-open-answer]').forEach((input) => input.addEventListener('input', () => {
     const questionIndex = Number(input.dataset.openAnswer);
@@ -198,6 +204,10 @@ function normalizeAnswer(value) {
   return String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('pl-PL').replace(/[\s\u00a0]/g, '');
 }
 
+function questionExplanation(question) {
+  return question.explanation || 'Sprawdź poprawną odpowiedź i porównaj ją ze swoją.';
+}
+
 function gradeOpenQuestion(questionIndex) {
   const question = quizQuestions(currentLesson()?.quiz ?? {}).at(questionIndex);
   if (!question || question.type !== 'open') return;
@@ -213,8 +223,8 @@ function gradeOpenQuestion(questionIndex) {
     return;
   }
   feedback.textContent = correct
-    ? `Dobrze! 🎉 ${question.explanation ?? ''}`
-    : `Jeszcze raz do tego wróć 🌱 Prawidłowa odpowiedź: ${acceptedAnswers.join(' lub ')}. ${question.explanation ?? ''}`;
+    ? `Dobrze! 🎉 ${questionExplanation(question)}`
+    : `Jeszcze raz do tego wróć 🌱 Prawidłowa odpowiedź: ${acceptedAnswers.join(' lub ')}. ${questionExplanation(question)}`;
   feedback.classList.toggle('wrong', !correct);
   input.classList.toggle('correct', correct);
   input.classList.toggle('wrong', !correct);
@@ -235,7 +245,7 @@ function gradeQuiz() {
       ? (question.acceptedAnswers ?? []).some((answer) => normalizeAnswer(answer) === normalizeAnswer(rawAnswer))
       : Number(rawAnswer) === question.correct);
     const feedback = panel.querySelector(`#quiz-feedback-${questionIndex}`);
-    const explanation = question.explanation ?? '';
+    const explanation = questionExplanation(question);
 
     if (!answered) {
       feedback.textContent = 'Wybierz albo wpisz odpowiedź, aby sprawdzić to pytanie.';
@@ -258,8 +268,9 @@ function gradeQuiz() {
       panel.querySelectorAll(`[data-choice="${questionIndex}"]`).forEach((button) => {
         const selected = Number(button.dataset.value);
         button.disabled = true;
-        if (selected === question.correct) button.classList.add('correct');
-        else if (selected === Number(rawAnswer)) button.classList.add('wrong');
+        button.classList.remove('correct', 'wrong');
+        if (selected === Number(rawAnswer)) button.classList.add(correct ? 'correct' : 'wrong');
+        else if (!correct && selected === question.correct) button.classList.add('correct');
       });
     }
   });
