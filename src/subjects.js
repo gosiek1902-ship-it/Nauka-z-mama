@@ -6,7 +6,7 @@ const subjectCatalog = [
   { id: 'polski', name: 'Język polski', icon: '📖', color: '#eaa27d', lessons: [] },
   { id: 'angielski', name: 'Język angielski', icon: '🔤', color: '#7da8d8', lessons: [
     {
-      title: 'Step 2 – Warm up your brain!',
+      title: 'Step 2 – Warm up your brain! Powtórzenie nazw przedmiotów w klasie, produktów spożywczych, ubrań, miejsc w mieście',
       summary: 'Powtórz nazwy rzeczy w klasie, jedzenia, ubrań i miejsc w mieście. Czytaj słówko na głos i powiedz, co znaczy po polsku.',
       sections: [
         {
@@ -71,6 +71,7 @@ const subjectCatalog = [
           { type: 'choice', question: 'Co znaczy ruler?', answers: ['linijka', 'plecak', 'książka', 'gumka'], correct: 0, explanation: 'Ruler to linijka.' },
           { type: 'choice', question: 'Czym piszesz w zeszycie?', answers: ['a banana', 'a pencil', 'a shop', 'a jacket'], correct: 1, explanation: 'A pencil to ołówek — możesz nim pisać w zeszycie.' },
           { type: 'open', question: 'Wpisz po angielsku: ołówek.', acceptedAnswers: ['pencil'], explanation: 'Ołówek po angielsku to pencil.' },
+          { type: 'open', question: 'Wpisz po angielsku: plecak szkolny.', acceptedAnswers: ['school bag', 'backpack'], explanation: 'Możesz powiedzieć school bag albo backpack.' },
           { type: 'choice', question: 'Które słówko oznacza chleb?', answers: ['milk', 'cheese', 'bread', 'apple'], correct: 2, explanation: 'Bread to chleb.' },
           { type: 'open', question: 'Wpisz po angielsku: chleb.', acceptedAnswers: ['bread'], explanation: 'Chleb po angielsku to bread.' },
           { type: 'choice', question: 'Co znaczy jacket?', answers: ['skarpetki', 'kurtka', 'sukienka', 'buty'], correct: 1, explanation: 'Jacket to kurtka.' },
