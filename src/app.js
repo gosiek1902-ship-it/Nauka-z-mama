@@ -89,7 +89,9 @@ function renderLessonNotes(lesson, index) {
       <div class="sentence-examples"><strong>Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span>${escapeHTML(en)}</span><small>${escapeHTML(pl)}</small></div>`).join('')}</div>
     </section>`).join('');
   const oldNotes = !sections && !vocabSections && lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(lesson.examples)}</p>` : '';
-  return `<details class="topic-card study-lesson-card" data-note-accordion><summary class="study-lesson-toggle"><span class="study-toggle-icons" aria-hidden="true"><span class="study-closed-icon">▶️</span><span class="study-open-icon">🔽</span></span><span class="topic-number">${String(index + 1).padStart(2, '0')}</span><span class="study-lesson-title">${escapeHTML(lesson.title)}</span></summary><div class="study-lesson-content"><p class="language-lesson-intro">${escapeHTML(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join('')}</ul></section>` : ''}</div></details>`;
+  const topicNumber = String(index + 1).padStart(2, '0');
+  const contentId = `study-topic-content-${activeSubject.id}-${index}`;
+  return `<article class="topic-card study-lesson-card" data-note-topic="${index}"><button class="study-lesson-toggle" type="button" data-note-toggle="${index}" aria-expanded="false" aria-controls="${contentId}"><span class="study-toggle-icons" aria-hidden="true">▶️</span><span class="topic-number">${topicNumber}</span><span class="study-lesson-title">${escapeHTML(lesson.title)}</span></button><div class="study-lesson-content study-topic-content" id="${contentId}" hidden><p class="language-lesson-intro">${escapeHTML(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join('')}</ul></section>` : ''}</div></article>`;
 }
 
 function renderNotes() {
@@ -158,10 +160,17 @@ function renderReview() {
 
 function renderPanel() {
   panel.innerHTML = ({ notes: renderNotes, quiz: renderQuiz, cheatsheet: renderCheatsheet, review: renderReview })[activeTab]();
-  const noteAccordions = [...panel.querySelectorAll('[data-note-accordion]')];
-  noteAccordions.forEach((lesson) => lesson.addEventListener('toggle', () => {
-    if (lesson.open) noteAccordions.forEach((otherLesson) => {
-      if (otherLesson !== lesson) otherLesson.open = false;
+  panel.querySelectorAll('[data-note-toggle]').forEach((button) => button.addEventListener('click', () => {
+    const topicIndex = button.dataset.noteToggle;
+    const isOpening = button.getAttribute('aria-expanded') !== 'true';
+    panel.querySelectorAll('[data-note-topic]').forEach((topic) => {
+      const topicButton = topic.querySelector('[data-note-toggle]');
+      const content = topic.querySelector('.study-topic-content');
+      const shouldOpen = topic.dataset.noteTopic === topicIndex && isOpening;
+      topicButton.setAttribute('aria-expanded', String(shouldOpen));
+      topicButton.querySelector('.study-toggle-icons').textContent = shouldOpen ? '🔽' : '▶️';
+      topic.classList.toggle('is-open', shouldOpen);
+      content.hidden = !shouldOpen;
     });
   }));
   panel.querySelectorAll('[data-quiz-lesson]').forEach((button) => button.addEventListener('click', () => {
