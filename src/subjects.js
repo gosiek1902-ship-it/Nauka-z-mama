@@ -3,8 +3,8 @@
  * lessons danego przedmiotu. Pola quiz i cheatFacts są opcjonalne.
  */
 const subjectCatalog = [
-  { id: 'polski', name: 'Język polski', icon: '📖', color: '#eaa27d', lessons: [] },
-  { id: 'angielski', name: 'Język angielski', icon: '🔤', color: '#7da8d8', lessons: [
+  { id: 'polski', name: 'Język polski', speechLanguage: 'pl-PL', icon: '📖', color: '#eaa27d', lessons: [] },
+  { id: 'angielski', name: 'Język angielski', speechLanguage: 'en-GB', icon: '🔤', color: '#7da8d8', lessons: [
     {
       title: 'Step 2 – Warm up your brain! Powtórzenie nazw przedmiotów w klasie, produktów spożywczych, ubrań, miejsc w mieście',
       summary: 'Powtórz nazwy rzeczy w klasie, jedzenia, ubrań i miejsc w mieście. Czytaj słówko na głos i powiedz, co znaczy po polsku.',
@@ -86,8 +86,8 @@ const subjectCatalog = [
       },
     },
   ] },
-  { id: 'niemiecki', name: 'Język niemiecki', icon: '💬', color: '#dda85c', lessons: [] },
-  { id: 'matematyka', name: 'Matematyka', icon: '🔢', color: '#7fb79a', lessons: [
+  { id: 'niemiecki', name: 'Język niemiecki', speechLanguage: 'de-DE', icon: '💬', color: '#dda85c', lessons: [] },
+  { id: 'matematyka', name: 'Matematyka', speechLanguage: 'pl-PL', icon: '🔢', color: '#7fb79a', lessons: [
     {
       title: 'Ułamki zwykłe',
       summary: 'Ułamek pokazuje, na ile równych części podzielono całość i ile z nich bierzemy. Licznik jest na górze, a mianownik na dole.',
@@ -139,11 +139,11 @@ const subjectCatalog = [
       },
     },
   ] },
-  { id: 'historia', name: 'Historia', icon: '🏰', color: '#bd9a78', lessons: [] },
-  { id: 'geografia', name: 'Geografia', icon: '🌍', color: '#65b6b3', lessons: [] },
-  { id: 'biologia', name: 'Biologia', icon: '🌿', color: '#7cb879', lessons: [] },
-  { id: 'technika', name: 'Technika', icon: '🛠️', color: '#8a9ab7', lessons: [] },
-  { id: 'plastyka', name: 'Plastyka', icon: '🎨', color: '#ce85a7', lessons: [] },
+  { id: 'historia', name: 'Historia', speechLanguage: 'pl-PL', icon: '🏰', color: '#bd9a78', lessons: [] },
+  { id: 'geografia', name: 'Geografia', speechLanguage: 'pl-PL', icon: '🌍', color: '#65b6b3', lessons: [] },
+  { id: 'biologia', name: 'Biologia', speechLanguage: 'pl-PL', icon: '🌿', color: '#7cb879', lessons: [] },
+  { id: 'technika', name: 'Technika', speechLanguage: 'pl-PL', icon: '🛠️', color: '#8a9ab7', lessons: [] },
+  { id: 'plastyka', name: 'Plastyka', speechLanguage: 'pl-PL', icon: '🎨', color: '#ce85a7', lessons: [] },
 ];
 
 // Dane są globalne, aby aplikacja działała także po otwarciu index.html z dysku.
