@@ -2,8 +2,11 @@
    w subjects.js pozostają nienaruszone i są łączone z tym materiałem. */
 let nextDifficulty = 0;
 const difficulty = () => ['Łatwe', 'Średnie', 'Trudniejsze'][nextDifficulty++ % 3];
-const choice = (question, answers, correct, explanation, level = difficulty()) => ({ type: 'choice', question, answers, correct, explanation, level });
-const open = (question, acceptedAnswers, explanation, level = difficulty()) => ({ type: 'open', question, acceptedAnswers, explanation, level });
+const choice = (question, answers, correct, explanation, level = difficulty()) => ({ type: 'choice', question, answers, correct, explanation, promptLanguage: 'pl-PL', explanationLanguage: 'pl-PL', level });
+const open = (question, acceptedAnswers, explanation, level = difficulty()) => ({ type: 'open', question, acceptedAnswers, explanation, promptLanguage: 'pl-PL', explanationLanguage: 'pl-PL', level });
+const speech = (...parts) => parts.map(([text, lang]) => ({ text, lang }));
+const pl = (text) => [text, 'pl-PL'];
+const en = (text) => [text, 'en-GB'];
 
 window.NaukaZMamaExpandedContent = {
   'Ułamki zwykłe': {
@@ -167,37 +170,48 @@ window.NaukaZMamaExpandedContent = {
   },
   'Step 2 – Warm up your brain! Powtórzenie nazw przedmiotów w klasie, produktów spożywczych, ubrań, miejsc w mieście': {
     examples: 'This is my book. — To jest moja książka. I like apples. — Lubię jabłka. My shoes are blue. — Moje buty są niebieskie. The park is near my school. — Park jest blisko mojej szkoły.',
+    examplesSpeechSegments: speech(
+      en('This is my book.'), pl('— To jest moja książka.'), en('I like apples.'), pl('— Lubię jabłka.'),
+      en('My shoes are blue.'), pl('— Moje buty są niebieskie.'), en('The park is near my school.'), pl('— Park jest blisko mojej szkoły.'),
+    ),
     detailedNotes: [
-      { title: '1. Rzeczy w klasie — classroom objects', points: ['book — książka; pen — długopis; pencil — ołówek.', 'ruler — linijka; rubber — gumka; school bag — plecak szkolny.', 'Mówimy a przed wyrazem zaczynającym się od spółgłoski, np. a book.'], example: 'This is my book. — To jest moja książka. I have a blue pen. — Mam niebieski długopis.', remember: 'Pencil to ołówek, a pen to długopis.' },
-      { title: '2. Jedzenie — food', points: ['apple — jabłko; banana — banan; bread — chleb.', 'cheese — ser; milk — mleko; sandwich — kanapka.', 'I like… znaczy „Lubię…”. Do apple w liczbie mnogiej dodajemy -s: apples.'], example: 'I like apples. — Lubię jabłka. I have a cheese sandwich. — Mam kanapkę z serem.' },
-      { title: '3. Ubrania — clothes', points: ['T-shirt — koszulka; trousers — spodnie; shoes — buty.', 'jacket — kurtka; dress — sukienka; socks — skarpetki.', 'Nazwy trousers i shoes zwykle występują w liczbie mnogiej.', 'My … is … opisuje jedną rzecz: My T-shirt is green.'], example: 'Put on your jacket. — Załóż kurtkę. My shoes are blue. — Moje buty są niebieskie.', remember: 'Przy trousers i shoes używamy are, np. My trousers are black.' },
-      { title: '4. Miejsca w mieście — places in town', points: ['school — szkoła; park — park; shop — sklep.', 'library — biblioteka; cinema — kino; bus stop — przystanek autobusowy.', 'near znaczy „blisko”, at the library — „w bibliotece”.'], example: 'The park is near my school. — Park jest blisko mojej szkoły. I read at the library. — Czytam w bibliotece.' },
-      { title: '5. Krótkie zdania', points: ['This is… — To jest…', 'I have… — Mam…', 'I like… — Lubię…', 'My … is… — Mój/Moja… jest…', 'Where is…? — Gdzie jest…?'], example: 'Where is the bus stop? — Gdzie jest przystanek autobusowy? It is near the shop. — Jest blisko sklepu.', remember: 'Ułóż zdanie z osobą/rzeczą, czasownikiem i resztą informacji. Czytaj je na głos.' },
+      { title: '1. Rzeczy w klasie — classroom objects', titleSpeechSegments: speech(pl('1. Rzeczy w klasie —'), en('classroom objects')), points: ['book — książka; pen — długopis; pencil — ołówek.', 'ruler — linijka; rubber — gumka; school bag — plecak szkolny.', 'Mówimy a przed wyrazem zaczynającym się od spółgłoski, np. a book.'], pointSpeechSegments: [speech(en('book —'), pl('książka;'), en('pen —'), pl('długopis;'), en('pencil —'), pl('ołówek.')), speech(en('ruler —'), pl('linijka;'), en('rubber —'), pl('gumka;'), en('school bag —'), pl('plecak szkolny.')), speech(pl('Mówimy a przed wyrazem zaczynającym się od spółgłoski, np.'), en('a book.'))], example: 'This is my book. — To jest moja książka. I have a blue pen. — Mam niebieski długopis.', exampleSpeechSegments: speech(en('This is my book.'), pl('— To jest moja książka.'), en('I have a blue pen.'), pl('— Mam niebieski długopis.')), remember: 'Pencil to ołówek, a pen to długopis.', rememberSpeechSegments: speech(en('Pencil'), pl('to ołówek,'), en('a pen'), pl('to długopis.')) },
+      { title: '2. Jedzenie — food', titleSpeechSegments: speech(pl('2. Jedzenie —'), en('food')), points: ['apple — jabłko; banana — banan; bread — chleb.', 'cheese — ser; milk — mleko; sandwich — kanapka.', 'I like… znaczy „Lubię…”. Do apple w liczbie mnogiej dodajemy -s: apples.'], pointSpeechSegments: [speech(en('apple —'), pl('jabłko;'), en('banana —'), pl('banan;'), en('bread —'), pl('chleb.')), speech(en('cheese —'), pl('ser;'), en('milk —'), pl('mleko;'), en('sandwich —'), pl('kanapka.')), speech(en('I like…'), pl('znaczy „Lubię…”. Do'), en('apple'), pl('w liczbie mnogiej dodajemy'), en('-s: apples.'))], example: 'I like apples. — Lubię jabłka. I have a cheese sandwich. — Mam kanapkę z serem.', exampleSpeechSegments: speech(en('I like apples.'), pl('— Lubię jabłka.'), en('I have a cheese sandwich.'), pl('— Mam kanapkę z serem.')) },
+      { title: '3. Ubrania — clothes', titleSpeechSegments: speech(pl('3. Ubrania —'), en('clothes')), points: ['T-shirt — koszulka; trousers — spodnie; shoes — buty.', 'jacket — kurtka; dress — sukienka; socks — skarpetki.', 'Nazwy trousers i shoes zwykle występują w liczbie mnogiej.', 'My … is … opisuje jedną rzecz: My T-shirt is green.'], pointSpeechSegments: [speech(en('T-shirt —'), pl('koszulka;'), en('trousers —'), pl('spodnie;'), en('shoes —'), pl('buty.')), speech(en('jacket —'), pl('kurtka;'), en('dress —'), pl('sukienka;'), en('socks —'), pl('skarpetki.')), speech(pl('Nazwy'), en('trousers'), pl('i'), en('shoes'), pl('zwykle występują w liczbie mnogiej.')), speech(en('My … is …'), pl('opisuje jedną rzecz:'), en('My T-shirt is green.'))], example: 'Put on your jacket. — Załóż kurtkę. My shoes are blue. — Moje buty są niebieskie.', exampleSpeechSegments: speech(en('Put on your jacket.'), pl('— Załóż kurtkę.'), en('My shoes are blue.'), pl('— Moje buty są niebieskie.')), remember: 'Przy trousers i shoes używamy are, np. My trousers are black.', rememberSpeechSegments: speech(pl('Przy'), en('trousers'), pl('i'), en('shoes'), pl('używamy'), en('are, np. My trousers are black.')) },
+      { title: '4. Miejsca w mieście — places in town', titleSpeechSegments: speech(pl('4. Miejsca w mieście —'), en('places in town')), points: ['school — szkoła; park — park; shop — sklep.', 'library — biblioteka; cinema — kino; bus stop — przystanek autobusowy.', 'near znaczy „blisko”, at the library — „w bibliotece”.'], pointSpeechSegments: [speech(en('school —'), pl('szkoła;'), en('park —'), pl('park;'), en('shop —'), pl('sklep.')), speech(en('library —'), pl('biblioteka;'), en('cinema —'), pl('kino;'), en('bus stop —'), pl('przystanek autobusowy.')), speech(en('near'), pl('znaczy „blisko”,'), en('at the library'), pl('— „w bibliotece”.'))], example: 'The park is near my school. — Park jest blisko mojej szkoły. I read at the library. — Czytam w bibliotece.', exampleSpeechSegments: speech(en('The park is near my school.'), pl('— Park jest blisko mojej szkoły.'), en('I read at the library.'), pl('— Czytam w bibliotece.')) },
+      { title: '5. Krótkie zdania', titleSpeechSegments: speech(pl('5. Krótkie zdania')), points: ['This is… — To jest…', 'I have… — Mam…', 'I like… — Lubię…', 'My … is… — Mój/Moja… jest…', 'Where is…? — Gdzie jest…?'], pointSpeechSegments: [speech(en('This is…'), pl('— To jest…')), speech(en('I have…'), pl('— Mam…')), speech(en('I like…'), pl('— Lubię…')), speech(en('My … is…'), pl('— Mój/Moja… jest…')), speech(en('Where is…?'), pl('— Gdzie jest…?'))], example: 'Where is the bus stop? — Gdzie jest przystanek autobusowy? It is near the shop. — Jest blisko sklepu.', exampleSpeechSegments: speech(en('Where is the bus stop?'), pl('— Gdzie jest przystanek autobusowy?'), en('It is near the shop.'), pl('— Jest blisko sklepu.')), remember: 'Ułóż zdanie z osobą/rzeczą, czasownikiem i resztą informacji. Czytaj je na głos.', rememberSpeechSegments: speech(pl('Ułóż zdanie z osobą/rzeczą, czasownikiem i resztą informacji. Czytaj je na głos.')) },
     ],
     definitions: [
-      { term: 'Classroom objects', meaning: 'Przedmioty, których używamy w klasie.', example: 'book, pencil, ruler' },
-      { term: 'Food', meaning: 'Jedzenie i produkty spożywcze.', example: 'apple, bread, milk' },
-      { term: 'Clothes', meaning: 'Ubrania i rzeczy, które nosimy.', example: 'jacket, dress, shoes' },
-      { term: 'Places in town', meaning: 'Miejsca, które można znaleźć w mieście.', example: 'park, shop, library' },
-      { term: 'Near', meaning: 'Po angielsku „blisko”.', example: 'The park is near my school.' },
+      { term: 'Classroom objects', meaning: 'Przedmioty, których używamy w klasie.', meaningSpeechSegments: speech(pl('Przedmioty, których używamy w klasie.')), example: 'book, pencil, ruler' },
+      { term: 'Food', meaning: 'Jedzenie i produkty spożywcze.', meaningSpeechSegments: speech(pl('Jedzenie i produkty spożywcze.')), example: 'apple, bread, milk' },
+      { term: 'Clothes', meaning: 'Ubrania i rzeczy, które nosimy.', meaningSpeechSegments: speech(pl('Ubrania i rzeczy, które nosimy.')), example: 'jacket, dress, shoes' },
+      { term: 'Places in town', meaning: 'Miejsca, które można znaleźć w mieście.', meaningSpeechSegments: speech(pl('Miejsca, które można znaleźć w mieście.')), example: 'park, shop, library' },
+      { term: 'Near', meaning: 'Po angielsku „blisko”.', meaningSpeechSegments: speech(pl('Po angielsku „blisko”.')), example: 'The park is near my school.' },
     ],
     importantFacts: ['pencil = ołówek, pen = długopis.', 'bread = chleb, cheese = ser, milk = mleko.', 'trousers = spodnie, shoes = buty; używamy z nimi are.', 'library = biblioteka, bus stop = przystanek autobusowy.', 'I like… = Lubię…, I have… = Mam…'],
+    importantFactsSpeechSegments: [
+      speech(en('pencil ='), pl('ołówek,'), en('pen ='), pl('długopis.')),
+      speech(en('bread ='), pl('chleb,'), en('cheese ='), pl('ser,'), en('milk ='), pl('mleko.')),
+      speech(en('trousers ='), pl('spodnie,'), en('shoes ='), pl('buty; używamy z nimi'), en('are.')),
+      speech(en('library ='), pl('biblioteka,'), en('bus stop ='), pl('przystanek autobusowy.')),
+      speech(en('I like… ='), pl('Lubię…,'), en('I have… ='), pl('Mam…')),
+    ],
     cheatSheet: [
-      { title: 'Classroom objects · klasa', items: [{ label: 'book', text: 'książka' }, { label: 'pen / pencil', text: 'długopis / ołówek' }, { label: 'ruler / rubber', text: 'linijka / gumka' }, { label: 'school bag', text: 'plecak szkolny' }], remember: 'Pen to długopis, pencil to ołówek.' },
-      { title: 'Food · jedzenie', items: [{ label: 'apple / banana', text: 'jabłko / banan' }, { label: 'bread / cheese', text: 'chleb / ser' }, { label: 'milk / sandwich', text: 'mleko / kanapka' }], example: 'I like apples. — Lubię jabłka.' },
-      { title: 'Clothes · ubrania', items: [{ label: 'T-shirt / jacket', text: 'koszulka / kurtka' }, { label: 'trousers / shoes', text: 'spodnie / buty' }, { label: 'dress / socks', text: 'sukienka / skarpetki' }], remember: 'Trousers i shoes łączymy z are.' },
-      { title: 'Places in town · miasto', items: [{ label: 'school / park', text: 'szkoła / park' }, { label: 'shop / library', text: 'sklep / biblioteka' }, { label: 'cinema / bus stop', text: 'kino / przystanek autobusowy' }], example: 'The park is near my school. — Park jest blisko mojej szkoły.' },
-      { title: 'Przydatne konstrukcje', items: [{ label: 'This is…', text: 'To jest…' }, { label: 'I have…', text: 'Mam…' }, { label: 'I like…', text: 'Lubię…' }, { label: 'near', text: 'blisko' }] },
+      { title: 'Classroom objects · klasa', titleSpeechSegments: speech(en('Classroom objects ·'), pl('klasa')), items: [{ label: 'book', text: 'książka', textSpeechSegments: speech(pl('książka')) }, { label: 'pen / pencil', text: 'długopis / ołówek', textSpeechSegments: speech(pl('długopis / ołówek')) }, { label: 'ruler / rubber', text: 'linijka / gumka', textSpeechSegments: speech(pl('linijka / gumka')) }, { label: 'school bag', text: 'plecak szkolny', textSpeechSegments: speech(pl('plecak szkolny')) }], remember: 'Pen to długopis, pencil to ołówek.', rememberSpeechSegments: speech(en('Pen'), pl('to długopis,'), en('pencil'), pl('to ołówek.')) },
+      { title: 'Food · jedzenie', titleSpeechSegments: speech(en('Food ·'), pl('jedzenie')), items: [{ label: 'apple / banana', text: 'jabłko / banan', textSpeechSegments: speech(pl('jabłko / banan')) }, { label: 'bread / cheese', text: 'chleb / ser', textSpeechSegments: speech(pl('chleb / ser')) }, { label: 'milk / sandwich', text: 'mleko / kanapka', textSpeechSegments: speech(pl('mleko / kanapka')) }], example: 'I like apples. — Lubię jabłka.', exampleSpeechSegments: speech(en('I like apples.'), pl('— Lubię jabłka.')) },
+      { title: 'Clothes · ubrania', titleSpeechSegments: speech(en('Clothes ·'), pl('ubrania')), items: [{ label: 'T-shirt / jacket', text: 'koszulka / kurtka', textSpeechSegments: speech(pl('koszulka / kurtka')) }, { label: 'trousers / shoes', text: 'spodnie / buty', textSpeechSegments: speech(pl('spodnie / buty')) }, { label: 'dress / socks', text: 'sukienka / skarpetki', textSpeechSegments: speech(pl('sukienka / skarpetki')) }], remember: 'Trousers i shoes łączymy z are.', rememberSpeechSegments: speech(en('Trousers'), pl('i'), en('shoes'), pl('łączymy z'), en('are.')) },
+      { title: 'Places in town · miasto', titleSpeechSegments: speech(en('Places in town ·'), pl('miasto')), items: [{ label: 'school / park', text: 'szkoła / park', textSpeechSegments: speech(pl('szkoła / park')) }, { label: 'shop / library', text: 'sklep / biblioteka', textSpeechSegments: speech(pl('sklep / biblioteka')) }, { label: 'cinema / bus stop', text: 'kino / przystanek autobusowy', textSpeechSegments: speech(pl('kino / przystanek autobusowy')) }], example: 'The park is near my school. — Park jest blisko mojej szkoły.', exampleSpeechSegments: speech(en('The park is near my school.'), pl('— Park jest blisko mojej szkoły.')) },
+      { title: 'Przydatne konstrukcje', titleSpeechSegments: speech(pl('Przydatne konstrukcje')), items: [{ label: 'This is…', text: 'To jest…', textSpeechSegments: speech(pl('To jest…')) }, { label: 'I have…', text: 'Mam…', textSpeechSegments: speech(pl('Mam…')) }, { label: 'I like…', text: 'Lubię…', textSpeechSegments: speech(pl('Lubię…')) }, { label: 'near', text: 'blisko', textSpeechSegments: speech(pl('blisko')) }] },
     ],
     reviewExercises: [
-      { type: 'choice', prompt: 'Co znaczy ruler?', options: ['linijka', 'plecak', 'książka'], correct: 0, hint: 'To przyrząd do mierzenia i rysowania prostych linii.' },
-      { type: 'blank', prompt: 'Uzupełnij: apple — ____.', acceptedAnswers: ['jabłko'], hint: 'To owoc czerwony lub zielony.' },
-      { type: 'truefalse', prompt: 'Trousers znaczy „spodnie”.', correct: 0, options: ['Prawda', 'Fałsz'], hint: 'To ubranie noszone na nogach.' },
-      { type: 'translate', prompt: 'Przetłumacz na angielski: biblioteka.', acceptedAnswers: ['library'], hint: 'Można tam wypożyczyć książki.' },
-      { type: 'complete', prompt: 'Uzupełnij zdanie: The park is ___ my school. (blisko)', acceptedAnswers: ['near'], hint: 'To krótkie słowo oznacza „blisko”.' },
-      { type: 'open', prompt: 'Napisz po angielsku jedno zdanie z I like i nazwą jedzenia.', acceptedAnswers: ['i like apples', 'i like bananas', 'i like bread', 'i like cheese', 'i like milk'], hint: 'I like znaczy „Lubię”.' },
-      { type: 'translate', prompt: 'Przetłumacz: I have a blue pen.', acceptedAnswers: ['mam niebieski długopis', 'mam niebieskie pióro'], hint: 'I have znaczy „Mam”.' },
-      { type: 'choice', prompt: 'Które słowo oznacza miejsce w mieście?', options: ['socks', 'library', 'cheese'], correct: 1, hint: 'To miejsce, gdzie wypożyczamy książki.' },
+      { type: 'choice', prompt: 'Co znaczy ruler?', promptLanguage: 'pl-PL', speechSegments: speech(pl('Co znaczy'), en('ruler?')), options: ['linijka', 'plecak', 'książka'], correct: 0, answerSpeechSegments: speech(pl('linijka')), hint: 'To przyrząd do mierzenia i rysowania prostych linii.', hintSpeechSegments: speech(pl('To przyrząd do mierzenia i rysowania prostych linii.')) },
+      { type: 'blank', prompt: 'Uzupełnij: apple — ____.', promptLanguage: 'pl-PL', speechSegments: speech(pl('Uzupełnij:'), en('apple'), pl('— luka.')), acceptedAnswers: ['jabłko'], answerSpeechSegments: speech(pl('jabłko')), hint: 'To owoc czerwony lub zielony.', hintSpeechSegments: speech(pl('To owoc czerwony lub zielony.')) },
+      { type: 'truefalse', prompt: 'Trousers znaczy „spodnie”.', promptLanguage: 'pl-PL', speechSegments: speech(en('Trousers'), pl('znaczy „spodnie”.')), correct: 0, options: ['Prawda', 'Fałsz'], answerSpeechSegments: speech(pl('Prawda')), hint: 'To ubranie noszone na nogach.', hintSpeechSegments: speech(pl('To ubranie noszone na nogach.')) },
+      { type: 'translate', prompt: 'Przetłumacz na angielski: biblioteka.', promptLanguage: 'pl-PL', acceptedAnswers: ['library'], answerSpeechSegments: speech(en('library')), hint: 'Można tam wypożyczyć książki.', hintSpeechSegments: speech(pl('Można tam wypożyczyć książki.')) },
+      { type: 'complete', prompt: 'Uzupełnij zdanie: The park is ___ my school. (blisko)', promptLanguage: 'pl-PL', speechSegments: speech(pl('Uzupełnij zdanie:'), en('The park is ___ my school.'), pl('(blisko)')), acceptedAnswers: ['near'], answerSpeechSegments: speech(en('near')), hint: 'To krótkie słowo oznacza „blisko”.', hintSpeechSegments: speech(pl('To krótkie słowo oznacza „blisko”.')) },
+      { type: 'open', prompt: 'Napisz po angielsku jedno zdanie z I like i nazwą jedzenia.', promptLanguage: 'pl-PL', speechSegments: speech(pl('Napisz po angielsku jedno zdanie z'), en('I like'), pl('i nazwą jedzenia.')), acceptedAnswers: ['i like apples', 'i like bananas', 'i like bread', 'i like cheese', 'i like milk'], answerSpeechSegments: speech(en('Na przykład: I like apples.')), hint: 'I like znaczy „Lubię”.', hintSpeechSegments: speech(en('I like'), pl('znaczy „Lubię”.')) },
+      { type: 'translate', prompt: 'Przetłumacz: I have a blue pen.', promptLanguage: 'pl-PL', speechSegments: speech(pl('Przetłumacz:'), en('I have a blue pen.')), acceptedAnswers: ['mam niebieski długopis', 'mam niebieskie pióro'], answerSpeechSegments: speech(pl('Mam niebieski długopis.')), hint: 'I have znaczy „Mam”.', hintSpeechSegments: speech(en('I have'), pl('znaczy „Mam”.')) },
+      { type: 'choice', prompt: 'Które słowo oznacza miejsce w mieście?', promptLanguage: 'pl-PL', options: ['socks', 'library', 'cheese'], correct: 1, answerSpeechSegments: speech(en('library')), hint: 'To miejsce, gdzie wypożyczamy książki.', hintSpeechSegments: speech(pl('To miejsce, gdzie wypożyczamy książki.')) },
     ],
     quizQuestions: [
       choice('Co znaczy school bag?', ['plecak szkolny', 'torba na zakupy', 'piórnik', 'sala lekcyjna'], 0, 'School bag to plecak szkolny.'),
@@ -233,4 +247,37 @@ numbersLesson.quizQuestions.splice(10, 2); // tak samo dwa dotychczasowe pytania
 
 const englishLesson = expandedLessons['Step 2 – Warm up your brain! Powtórzenie nazw przedmiotów w klasie, produktów spożywczych, ubrań, miejsc w mieście'];
 const extraEnglishQuestions = englishLesson.quizQuestions;
-englishLesson.quizQuestions = [extraEnglishQuestions[2], extraEnglishQuestions[3], extraEnglishQuestions[12], extraEnglishQuestions[17], extraEnglishQuestions[5], extraEnglishQuestions[11]];
+const englishQuizSpeech = {
+  'Co znaczy cheese?': {
+    speechSegments: speech(pl('Co znaczy'), en('cheese?')),
+    answerSpeechSegments: speech(pl('ser')),
+    explanationSpeechSegments: speech(en('Cheese'), pl('to ser.')),
+  },
+  'Wybierz poprawne zdanie: „Moje buty są niebieskie”.': {
+    speechSegments: speech(pl('Wybierz poprawne zdanie: „Moje buty są niebieskie”.')),
+    answerSpeechSegments: speech(en('My shoes are blue.')),
+    explanationSpeechSegments: speech(en('Shoes'), pl('to liczba mnoga, więc mówimy'), en('are.')),
+  },
+  'Jak przetłumaczysz „I like milk”?': {
+    speechSegments: speech(pl('Jak przetłumaczysz'), en('„I like milk”?')),
+    answerSpeechSegments: speech(pl('Lubię mleko.')),
+    explanationSpeechSegments: speech(en('I like'), pl('znaczy „Lubię”.')),
+  },
+  'Które zdanie znaczy „To jest moja książka”?': {
+    speechSegments: speech(pl('Które zdanie znaczy „To jest moja książka”?')),
+    answerSpeechSegments: speech(en('This is my book.')),
+    explanationSpeechSegments: speech(en('This is…'), pl('znaczy „To jest…”.')),
+  },
+  'Wpisz po angielsku: banan.': {
+    speechSegments: speech(pl('Wpisz po angielsku: banan.')),
+    answerSpeechSegments: speech(en('banana')),
+    explanationSpeechSegments: speech(en('Banana'), pl('to banan.')),
+  },
+  'Wpisz po angielsku: kino.': {
+    speechSegments: speech(pl('Wpisz po angielsku: kino.')),
+    answerSpeechSegments: speech(en('cinema')),
+    explanationSpeechSegments: speech(en('Cinema'), pl('to kino.')),
+  },
+};
+englishLesson.quizQuestions = [extraEnglishQuestions[2], extraEnglishQuestions[3], extraEnglishQuestions[12], extraEnglishQuestions[17], extraEnglishQuestions[5], extraEnglishQuestions[11]]
+  .map((question) => ({ ...question, promptLanguage: 'pl-PL', explanationLanguage: 'pl-PL', ...englishQuizSpeech[question.question] }));

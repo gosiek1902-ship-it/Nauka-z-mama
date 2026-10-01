@@ -445,7 +445,7 @@ function renderLessonNotes(lesson, index) {
       <div class="vocabulary-list">${section.vocabulary.map(({ en, pl }) => `<div class="vocabulary-pair"><strong lang="en">${escapeHTML(en)}</strong><span lang="pl">${escapeHTML(pl)}</span></div>`).join('')}</div>
       <div class="sentence-examples"><strong lang="pl-PL">Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span lang="en">${escapeHTML(en)}</span><small lang="pl">${escapeHTML(pl)}</small></div>`).join('')}</div>
     </section>`).join('');
-  const oldNotes = !sections && !vocabSections && lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${renderSpeechText(lesson.examples)}</p>` : '';
+  const oldNotes = !sections && !vocabSections && lesson.examples ? `<p class="study-example"><strong lang="pl-PL">Przykład:</strong> ${renderSpeechText(lesson.examplesSpeechSegments ?? lesson.examples)}</p>` : '';
   return `<div class="study-lesson-content"><p class="language-lesson-intro">${renderSpeechText(lesson.summarySpeechSegments ?? lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5 lang="pl-PL">📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5 lang="pl-PL">✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact, index) => `<li>${renderSpeechText(lesson.importantFactsSpeechSegments?.[index] ?? fact)}</li>`).join('')}</ul></section>` : ''}</div>`;
 }
 
@@ -549,6 +549,7 @@ function oralQuestions() {
   return [...quizQuestions(lesson).map((question, index) => ({
     prompt: question.question,
     answer: question.type === 'open' ? (question.acceptedAnswers ?? []).join(' lub ') : question.answers?.[question.correct],
+    answerSpeechSegments: question.answerSpeechSegments,
     explanation: question.explanation,
     speechSegments: question.speechSegments,
     promptLanguage: question.promptLanguage,
@@ -557,6 +558,7 @@ function oralQuestions() {
   })), ...(lesson?.reviewExercises ?? []).map((exercise, index) => ({
     prompt: exercise.prompt,
     answer: exercise.type === 'choice' || exercise.type === 'truefalse' ? exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : exercise.acceptedAnswers?.join(' lub '),
+    answerSpeechSegments: exercise.answerSpeechSegments,
     explanation: exercise.hint,
     speechSegments: exercise.speechSegments,
     promptLanguage: exercise.promptLanguage,
@@ -571,7 +573,7 @@ function renderOral() {
   if (oralIndex >= questions.length) return `<div class="oral-session-end"><h3>Gotowe! 🌱</h3><p>Dzisiaj przećwiczyliście ${oralSessionDone} pytań.</p><p>Do powtórzenia zostało ${appData.errors.filter((item) => !item.mastered).length}.</p><button type="button" data-reset-oral>Jeszcze raz</button></div>`;
   const item = questions[oralIndex];
   const promptSpeech = item.speechSegments ?? [{ text: item.prompt, lang: item.promptLanguage ?? defaultSpeechLanguage() }];
-  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${renderSpeechText(promptSpeech)}</h4>${item.answer ? `<details class="oral-answer"><summary>Pokaż przykładową odpowiedź</summary><p>${renderSpeechText(item.answer)} ${renderSpeechText(item.explanationSpeechSegments ?? item.explanation ?? '')}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
+  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${renderSpeechText(promptSpeech)}</h4>${item.answer ? `<details class="oral-answer"><summary>Pokaż przykładową odpowiedź</summary><p>${renderSpeechText(item.answerSpeechSegments ?? item.answer)} ${renderSpeechText(item.explanationSpeechSegments ?? item.explanation ?? '')}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
 }
 
 function renderTopicLinks(entries, emptyText) {
