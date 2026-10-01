@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aleksander-app-shell-v1';
+const CACHE_NAME = 'aleksander-app-shell-v2';
 const APP_FILES = [
   './',
   './index.html',

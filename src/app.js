@@ -4,18 +4,24 @@ const expandedContent = window.NaukaZMamaExpandedContent ?? {};
 subjects.forEach((subject) => subject.lessons.forEach((lesson) => Object.assign(lesson, expandedContent[lesson.title] ?? {})));
 
 const STORAGE_KEY = 'nauka-z-mama-progress-v1';
+const APP_DATA_KEY = 'aleksander-learning-tools-v1';
 const subjectList = document.querySelector('#subject-list');
 const mobileSubjectSelect = document.querySelector('#mobile-subject-select');
 const panel = document.querySelector('#panel');
-const tabs = [...document.querySelectorAll('.tab')];
+const homeDashboard = document.querySelector('#home-dashboard');
 let activeSubject = subjects.find((subject) => subject.id === 'matematyka') ?? subjects[0];
 let activeTab = 'notes';
-let lessonIndex = activeSubject.lessons.length - 1;
+let activeView = 'topics';
+let showDashboard = true;
+let lessonIndex = 0;
 let quizAnswers = {};
 let quizGraded = false;
 let reviewAnswers = {};
 let reviewResults = {};
+let oralIndex = 0;
+let oralSessionDone = 0;
 let progress = loadProgress();
+let appData = loadAppData();
 
 function loadProgress() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? { done: {} }; }
@@ -24,6 +30,41 @@ function loadProgress() {
 
 function saveProgress() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  renderHomeDashboard();
+}
+
+function loadAppData() {
+  try { return { favorites: [], errors: [], testScores: {}, ...(JSON.parse(localStorage.getItem(APP_DATA_KEY)) ?? {}) }; }
+  catch { return { favorites: [], errors: [], testScores: {} }; }
+}
+
+function saveAppData() {
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+  renderHomeDashboard();
+}
+
+function topicRef(subjectId = activeSubject.id, index = lessonIndex) { return `${subjectId}:${index}`; }
+function isFavorite(subjectId, index) { return appData.favorites.includes(topicRef(subjectId, index)); }
+function toggleFavorite() {
+  const ref = topicRef();
+  appData.favorites = isFavorite(activeSubject.id, lessonIndex)
+    ? appData.favorites.filter((item) => item !== ref)
+    : [...appData.favorites, ref];
+  saveAppData();
+}
+
+function saveError({ subjectId = activeSubject.id, index = lessonIndex, itemId, prompt, answer, correctAnswer, explanation, source }) {
+  const id = `${topicRef(subjectId, index)}:${itemId}`;
+  const existing = appData.errors.find((item) => item.id === id);
+  if (existing) {
+    existing.lastAnswer = String(answer ?? '');
+    existing.attempts = (existing.attempts ?? 1) + 1;
+    existing.mastered = false;
+    existing.updatedAt = Date.now();
+  } else {
+    appData.errors.push({ id, subjectId, lessonIndex: index, itemId, prompt, lastAnswer: String(answer ?? ''), correctAnswer, explanation, source, attempts: 1, mastered: false, updatedAt: Date.now() });
+  }
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
 }
 
 function renderSubjects() {
@@ -42,9 +83,23 @@ mobileSubjectSelect.addEventListener('change', () => {
   if (mobileSubjectSelect.value) selectSubject(mobileSubjectSelect.value);
 });
 
+document.querySelector('#back-to-subjects')?.addEventListener('click', () => {
+  activeView = 'topics';
+  showDashboard = true;
+  renderPanel();
+  if (window.matchMedia('(max-width: 680px)').matches) {
+    mobileSubjectSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    mobileSubjectSelect.focus({ preventScroll: true });
+  } else {
+    subjectList.querySelector('[data-subject]')?.focus();
+  }
+});
+
 function selectSubject(id) {
   activeSubject = subjects.find((subject) => subject.id === id) ?? subjects[0];
-  lessonIndex = activeSubject.lessons.length - 1;
+  lessonIndex = 0;
+  activeView = 'topics';
+  showDashboard = false;
   quizAnswers = {};
   quizGraded = false;
   reviewAnswers = {};
@@ -58,6 +113,47 @@ function selectSubject(id) {
 function lessonKey(index = lessonIndex) { return `${activeSubject.id}:${index}`; }
 function lessons() { return activeSubject.lessons; }
 function currentLesson() { return lessons()[lessonIndex]; }
+
+function resolveTopic(ref) {
+  const [subjectId, rawIndex] = String(ref).split(':');
+  const subject = subjects.find((item) => item.id === subjectId);
+  const index = Number(rawIndex);
+  return subject?.lessons[index] ? { subject, lesson: subject.lessons[index], index } : null;
+}
+
+function renderHomeDashboard() {
+  if (!homeDashboard) return;
+  const favoriteCount = appData.favorites.length;
+  const errorCount = appData.errors.filter((item) => !item.mastered).length;
+  const todayRefs = [...new Set([...(appData.recentTopics ?? []), ...appData.favorites])].slice(0, 3);
+  const today = (todayRefs.length ? todayRefs : subjects.flatMap((subject) => subject.lessons.map((_, index) => topicRef(subject.id, index))).slice(0, 3))
+    .map(resolveTopic).filter(Boolean);
+  const subjectProgress = subjects.map((subject) => {
+    const completed = subject.lessons.filter((_, index) => progress.done[topicRef(subject.id, index)]).length;
+    return `<div class="dashboard-progress-row"><span>${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</span><span>${completed}/${subject.lessons.length}</span><i><b style="width:${subject.lessons.length ? Math.round(completed / subject.lessons.length * 100) : 0}%"></b></i></div>`;
+  }).join('');
+  const hidden = activeView !== 'topics' || !showDashboard;
+  homeDashboard.hidden = hidden;
+  homeDashboard.innerHTML = `<div class="dashboard-actions"><button type="button" data-home-action="today">🏠 DZISIAJ SIĘ UCZĘ</button><button type="button" data-home-action="favorites">⭐ MOJE DO NAUKI <span>${favoriteCount}</span></button><button type="button" data-home-action="errors">🔁 POWTÓRZ MOJE BŁĘDY <span>${errorCount}</span></button><button type="button" data-home-action="fiveMinutes">⚡ MAM 5 MINUT</button><button type="button" data-home-action="progress">📊 MOJE POSTĘPY</button></div><div class="dashboard-today"><h3>🏠 Dzisiaj się uczę</h3><p>Mały krok też jest krokiem.</p><div class="today-topic-list">${today.map(({subject,lesson,index})=>`<button type="button" data-direct-topic="${subject.id}:${index}">${escapeHTML(subject.icon)} ${escapeHTML(lesson.title)} <small>${escapeHTML(subject.name)}</small></button>`).join('')}</div></div><div class="dashboard-progress"><h3>📊 Moje postępy</h3>${subjectProgress}</div>`;
+  homeDashboard.querySelectorAll('[data-home-action]').forEach((button) => button.addEventListener('click', () => {
+    activeView = button.dataset.homeAction;
+    renderPanel();
+  }));
+  homeDashboard.querySelectorAll('[data-direct-topic]').forEach((button) => button.addEventListener('click', () => {
+    const found = resolveTopic(button.dataset.directTopic);
+    if (!found) return;
+    activeSubject = found.subject;
+    lessonIndex = found.index;
+    showDashboard = false;
+    appData.recentTopics = [topicRef(), ...(appData.recentTopics ?? []).filter((ref) => ref !== topicRef())].slice(0, 10);
+    localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+    document.querySelector('#subject-title').textContent = activeSubject.name;
+    document.querySelector('#current-subject-crumb').textContent = activeSubject.name;
+    renderSubjects();
+    activeView = 'materials';
+    renderPanel();
+  }));
+}
 
 function emptyState(heading, text, icon = '🌱') {
   return `<div class="empty-state"><div class="empty-emoji">${icon}</div><h3>${heading}</h3><p>${text}</p></div>`;
@@ -89,37 +185,61 @@ function renderLessonNotes(lesson, index) {
       <div class="sentence-examples"><strong>Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span>${escapeHTML(en)}</span><small>${escapeHTML(pl)}</small></div>`).join('')}</div>
     </section>`).join('');
   const oldNotes = !sections && !vocabSections && lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(lesson.examples)}</p>` : '';
-  const topicNumber = String(index + 1).padStart(2, '0');
-  const contentId = `study-topic-content-${activeSubject.id}-${index}`;
-  return `<article class="topic-card study-lesson-card" data-note-topic="${index}"><button class="study-lesson-toggle" type="button" data-note-toggle="${index}" aria-expanded="false" aria-controls="${contentId}"><span class="study-toggle-icons" aria-hidden="true">▶️</span><span class="topic-number">${topicNumber}</span><span class="study-lesson-title">${escapeHTML(lesson.title)}</span></button><div class="study-lesson-content study-topic-content" id="${contentId}" hidden><p class="language-lesson-intro">${escapeHTML(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join('')}</ul></section>` : ''}</div></article>`;
+  return `<div class="study-lesson-content"><p class="language-lesson-intro">${escapeHTML(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join('')}</ul></section>` : ''}</div>`;
 }
 
 function renderNotes() {
+  const lesson = currentLesson();
+  if (!lesson) return emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu notatki, przykłady i ćwiczenia, kiedy będziesz gotowy.', '📒');
+  return renderLessonNotes(lesson, lessonIndex);
+}
+
+function renderTopicList() {
   const items = lessons();
   const doneCount = items.filter((_, index) => progress.done[lessonKey(index)]).length;
   const progressCard = `<div class="subject-progress"><div class="subject-progress-label"><strong>Twój postęp</strong><span>Ukończone tematy: ${doneCount}/${items.length}</span></div><div class="subject-progress-track" role="progressbar" aria-label="Ukończone tematy" aria-valuemin="0" aria-valuemax="${items.length}" aria-valuenow="${doneCount}"><span style="width:${items.length ? Math.round(doneCount / items.length * 100) : 0}%"></span></div></div>`;
-  if (!items.length) return `
-    <div class="panel-head"><div><h3>Moje notatki</h3><p class="panel-subtitle">Tutaj zbieramy najważniejsze rzeczy z lekcji.</p></div><span class="topic-badge">${activeSubject.icon} ${activeSubject.name}</span></div>
-    ${progressCard}${emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu notatki, przykłady i ćwiczenia, kiedy będziesz gotowy.', '📒')}`;
-  return `
-    <div class="panel-head"><div><h3>Moje notatki</h3><p class="panel-subtitle">Krótkie wyjaśnienia i przykłady, które pomagają zapamiętać.</p></div><span class="topic-badge">${items.length} ${items.length === 1 ? 'temat' : 'tematy'}</span></div>
-    ${progressCard}<div class="topic-grid notes-accordion-list">${items.map(renderLessonNotes).join('')}</div>`;
+  const cards = items.map((lesson, index) => `<button type="button" class="lesson-topic-card" data-open-topic="${index}"><span class="lesson-topic-icon">📘</span><span class="lesson-topic-number">${String(index + 1).padStart(2, '0')}</span><span class="lesson-topic-name">${escapeHTML(lesson.title)}</span><span class="lesson-topic-arrow" aria-hidden="true">›</span></button>`).join('');
+  return `<div class="panel-head"><div><h3>Wybierz temat</h3><p class="panel-subtitle">Wybierz lekcję, której chcesz się pouczyć.</p></div><span class="topic-badge">${items.length} ${items.length === 1 ? 'temat' : 'tematy'}</span></div>${progressCard}${items.length ? `<div class="lesson-topic-grid">${cards}</div>` : emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu nowe tematy, gdy będziesz gotowy.', '📒')}`;
+}
+
+function renderMaterialMenu() {
+  const lesson = currentLesson();
+  if (!lesson) return renderTopicList();
+  const score = appData.testScores?.[topicRef()];
+  const unresolvedErrors = appData.errors.filter((item) => item.subjectId === activeSubject.id && item.lessonIndex === lessonIndex && !item.mastered).length;
+  const topicProgress = `<div class="topic-learning-progress"><span>Notatki 📖</span><span>${lesson.reviewExercises?.length ? 'Ćwiczenia ✏️' : 'Ćwiczenia do dodania'}</span><span>Powtórka ${progress.done[lessonKey()] ? '✅' : 'do zrobienia'}</span><span>Sprawdzian ${score === undefined ? '—' : `${score}%`}</span>${unresolvedErrors ? `<span>Do powtórzenia: ${unresolvedErrors}</span>` : ''}</div>`;
+  const options = [
+    ['notes', '📖', 'NOTATKI', 'Krótkie i jasne opracowanie tematu'],
+    ['cheatsheet', '🧠', 'ŚCIĄGA', 'Najważniejsze rzeczy do zapamiętania'],
+    ['practice', '✏️', 'ĆWICZENIA', 'Poćwicz i sprawdź odpowiedzi'],
+    ['review', '🔄', 'POWTÓRKA', 'Ćwiczenia utrwalające temat'],
+    ['quiz', '📝', 'SPRAWDZIAN', 'Sprawdź, ile już umiesz'],
+    ['oral', '🎯', 'NAUKA Z MAMĄ', 'Pytania i odpowiedzi ustne'],
+  ];
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Wróć do tematów</button><button type="button" class="learning-back-button secondary" data-nav="subjects">← Wszystkie przedmioty</button></div><div class="panel-head topic-screen-heading"><div><h3>📘 ${escapeHTML(lesson.title)}</h3><p class="panel-subtitle">Czego chcesz się teraz uczyć?</p></div></div>${topicProgress}<button type="button" class="favorite-topic-button" data-toggle-favorite>${isFavorite(activeSubject.id, lessonIndex) ? '⭐ Usuń z „Moje do nauki”' : '⭐ Dodaj do „Moje do nauki”'}</button><div class="material-choice-grid">${options.map(([id, icon, title, description]) => `<button type="button" class="material-choice-card" data-open-material="${id}"><span class="material-choice-icon">${icon}</span><span class="material-choice-title">${title}</span><span class="material-choice-description">${description}</span><span class="material-choice-arrow" aria-hidden="true">›</span></button>`).join('')}</div>`;
+}
+
+function renderMaterialContent() {
+  const lesson = currentLesson();
+  if (!lesson) return renderTopicList();
+  const titles = { notes: '📖 NOTATKI', cheatsheet: '🧠 ŚCIĄGA', practice: '✏️ ĆWICZENIA', review: '🔄 POWTÓRKA', quiz: '📝 SPRAWDZIAN', oral: '🎯 NAUKA Z MAMĄ' };
+  const renderers = { notes: renderNotes, cheatsheet: renderCheatsheet, practice: renderPractice, review: renderReview, quiz: renderQuiz, oral: renderOral };
+  const tools = `<div class="learning-tools">${activeTab === 'notes' ? '<button type="button" data-read-notes>🔊 Przeczytaj</button><button type="button" data-stop-reading>⏹ Zatrzymaj</button>' : ''}<button type="button" data-print-material>🖨 Drukuj</button></div>`;
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="materials">← ${escapeHTML(lesson.title)}</button><button type="button" class="learning-back-button secondary" data-nav="topics">← Wróć do tematów</button><button type="button" class="learning-back-button secondary" data-nav="subjects">← Wszystkie przedmioty</button></div><div class="learning-material-heading"><h3>${titles[activeTab]}</h3><p>${escapeHTML(lesson.title)}</p></div>${tools}<div class="learning-content-body">${renderers[activeTab]()}</div>`;
 }
 
 function renderQuiz() {
-  const available = lessons().map((lesson, index) => ({ lesson, index })).filter(({ lesson }) => quizQuestions(lesson).length);
-  if (!available.length) return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">Sprawdź, co już pamiętasz. Bez stresu — pomyłki też uczą!</p></div><span class="topic-badge">🎯 Quiz</span></div>${emptyState('Quiz pojawi się z kolejnymi tematami', 'Do każdej lekcji możemy dodać krótkie pytanie i wyjaśnienie odpowiedzi. Wybierz temat w zakładce Notatki, aby zacząć.', '🧩')}`;
-  const picked = available.find(({ index }) => index === lessonIndex) ?? available[available.length - 1];
-  const questions = quizQuestions(picked.lesson);
-  return `<div class="panel-head"><div><h3>Mały test</h3><p class="panel-subtitle">${picked.lesson.title} · Odpowiedz na pytania, a potem sprawdź wynik.</p></div><span class="quiz-meta">${questions.length} ${questionCountLabel(questions.length)}</span></div>
-    <div class="quiz-topic-picker" aria-label="Wybierz temat testu">${available.map(({ lesson, index }) => `<button type="button" class="quiz-topic-button ${index === picked.index ? 'active' : ''}" data-quiz-lesson="${index}" aria-pressed="${index === picked.index}">${escapeHTML(lesson.title)}</button>`).join('')}</div>
+  const lesson = currentLesson();
+  const questions = quizQuestions(lesson);
+  if (!questions.length) return `<div class="panel-head"><div><h3>Sprawdzian</h3><p class="panel-subtitle">Sprawdź, co już pamiętasz. Bez stresu — pomyłki też uczą!</p></div><span class="topic-badge">🎯 Test</span></div>${emptyState('Sprawdzian pojawi się z kolejnymi materiałami', 'Do tego tematu dodamy pytania, gdy będą gotowe.', '🧩')}`;
+  return `<div class="panel-head"><div><h3>${escapeHTML(lesson.title)}</h3><p class="panel-subtitle">Odpowiedz na pytania, a potem sprawdź wynik.</p></div><span class="quiz-meta">${questions.length} ${questionCountLabel(questions.length)}</span></div>
     <div class="quiz-question-list">${questions.map((question, questionIndex) => {
       const isOpen = question.type === 'open';
       const response = quizAnswers[questionIndex] ?? '';
       const answers = isOpen ? `<div class="open-answer-block"><label class="open-answer-row"><span>Twoja odpowiedź</span><input type="text" data-open-answer="${questionIndex}" value="${escapeHTML(response)}" placeholder="Wpisz odpowiedź" autocomplete="off" /></label><button type="button" class="open-answer-check" data-check-open="${questionIndex}">Sprawdź</button></div>`
         : `<div class="answer-list">${question.answers.map((answer, answerIndex) => `<button type="button" class="answer-option ${response === answerIndex ? 'selected' : ''}" data-choice="${questionIndex}" data-value="${answerIndex}" ${quizGraded ? 'disabled' : ''}>${String.fromCharCode(65 + answerIndex)}. &nbsp;${escapeHTML(answer)}</button>`).join('')}</div>`;
       const level = question.level ?? ['Łatwe', 'Średnie', 'Trudniejsze'][questionIndex % 3];
-      return `<article class="quiz-question-card"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${escapeHTML(question.question)} <small class="question-level">${escapeHTML(level)}</small></p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
+      return `<article class="quiz-question-card" id="quiz-question-${questionIndex}"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${escapeHTML(question.question)} <small class="question-level">${escapeHTML(level)}</small></p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
     }).join('')}</div>
     <div class="quiz-submit-row"><button class="action-button quiz-submit" type="button" data-check-quiz ${quizGraded ? 'disabled' : ''}>Sprawdź odpowiedzi <span>✓</span></button><div id="quiz-score" class="quiz-score" role="status"></div></div>`;
 }
@@ -128,16 +248,16 @@ function renderCheatsheet() {
   const sheet = currentLesson()?.cheatSheet;
   if (sheet?.length) return `<div class="panel-head"><div><h3>💡 Ściąga: ${escapeHTML(currentLesson().title)}</h3><p class="panel-subtitle">Szybka karta przed sprawdzianem.</p></div><span class="topic-badge">Powtórz w 2 minuty</span></div><div class="cheat-grid">${sheet.map((section) => `<section class="cheat-card"><h4>${escapeHTML(section.title)}</h4>${section.items?.length ? `<dl>${section.items.map((item) => `<div><dt>${escapeHTML(item.label)}</dt><dd>${escapeHTML(item.text)}</dd></div>`).join('')}</dl>` : ''}${section.rule ? `<p class="cheat-rule"><strong>Reguła:</strong> ${escapeHTML(section.rule)}</p>` : ''}${section.example ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(section.example)}</p>` : ''}${section.remember ? `<p class="remember-callout"><strong>🧠 Zapamiętaj</strong><br>${escapeHTML(section.remember)}</p>` : ''}</section>`).join('')}</div>`;
   const facts = currentLesson()?.cheatFacts;
-  if (!facts?.length) return `<div class="panel-head"><div><h3>Ściąga do zapamiętania</h3><p class="panel-subtitle">Najważniejsze zasady w jednym miejscu.</p></div><span class="topic-badge">💡 Przydatne!</span></div>${emptyState('Najważniejsze wskazówki będą tutaj', 'Gdy dodamy tematy lekcji, zbierzemy tu krótkie reguły, definicje i sposoby na zapamiętanie.', '✨')}`;
+  if (!facts?.length) return `<div class="panel-head"><div><h3>Ściąga do zapamiętania</h3><p class="panel-subtitle">Najważniejsze zasady w jednym miejscu.</p></div><span class="topic-badge">💡 Przydatne!</span></div>${emptyState('Ten materiał będzie dostępny po dodaniu treści.', 'Wróć do wyboru innego materiału albo tematu.', '✨')}`;
   return `<div class="panel-head"><div><h3>Ściąga: ${currentLesson().title}</h3><p class="panel-subtitle">Krótko i na temat — rzuć okiem przed powtórką.</p></div><span class="topic-badge">💡 Zapamiętaj</span></div><div class="fact-list">${facts.map((fact, index) => `<div class="fact-row"><b>${index + 1}.</b><span>${fact}</span></div>`).join('')}</div>`;
 }
 
-function renderReview() {
+function renderReview(isPractice = false) {
   const items = lessons();
-  if (!items.length) return `<div class="panel-head"><div><h3>Powtórka</h3><p class="panel-subtitle">Zaznacz temat po przypomnieniu go sobie.</p></div><span class="topic-badge">🔁 Utrwalamy</span></div>${emptyState('Powtórka czeka na pierwsze tematy', 'Kiedy pojawią się lekcje, znajdziesz tu ich listę. Odhaczaj tematy, które już powtórzyłeś!', '🌼')}`;
+  const lesson = currentLesson();
+  if (!lesson) return emptyState('Powtórka czeka na pierwsze tematy', 'Kiedy pojawią się lekcje, dodamy tu ćwiczenia.', '🌼');
   const doneCount = items.filter((_, index) => progress.done[lessonKey(index)]).length;
-  const reviewExercises = currentLesson()?.reviewExercises ?? [];
-  const topicPicker = items.length > 1 ? `<div class="quiz-topic-picker" aria-label="Wybierz temat powtórki">${items.map((lesson, index) => `<button type="button" class="quiz-topic-button ${index === lessonIndex ? 'active' : ''}" data-review-lesson="${index}" aria-pressed="${index === lessonIndex}">${escapeHTML(lesson.title)}</button>`).join('')}</div>` : '';
+  const reviewExercises = lesson.reviewExercises ?? [];
   const exercises = reviewExercises.length ? `<div class="review-exercises"><h4>Krótka powtórka: ${escapeHTML(currentLesson().title)}</h4>${reviewExercises.map((exercise, index) => {
     const key = `${activeSubject.id}:${lessonIndex}:${index}`;
     const result = reviewResults[key];
@@ -152,33 +272,154 @@ function renderReview() {
     const answerReveal = knownAnswer ? `<details class="review-answer-reveal"><summary>▶️ Pokaż odpowiedź</summary><p>${escapeHTML(knownAnswer)}</p></details>` : '';
     return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${escapeHTML(exercise.prompt)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div>${answerReveal}</div>`;
   }).join('')}</div>` : '';
-  return `<div class="panel-head"><div><h3>Powtórka</h3><p class="panel-subtitle">Przypomnij sobie temat i zaznacz go jako powtórzony.</p></div><span class="topic-badge">🔁 Małe kroki!</span></div>
-    ${topicPicker}${exercises}
-    ${items.map((lesson, index) => `<label class="review-row"><span><strong>${lesson.title}</strong><small>Otwórz Notatki, jeśli chcesz przeczytać je jeszcze raz.</small></span><input class="review-check" type="checkbox" data-review="${index}" ${progress.done[lessonKey(index)] ? 'checked' : ''} aria-label="Oznacz ${lesson.title} jako powtórzony" /></label>`).join('')}
-    <div class="review-progress">🌟 Powtórzone tematy: ${doneCount} z ${items.length}</div>`;
+  const quickFacts = [...(lesson.importantFacts ?? []), ...(lesson.definitions ?? []).map((definition) => `${definition.term}: ${definition.meaning}`)];
+  return `<div class="panel-head"><div><h3>${escapeHTML(lesson.title)}</h3><p class="panel-subtitle">${isPractice ? 'Poćwicz bez presji. Każda próba pomaga.' : 'Krótkie pytania, pojęcia i zasady do utrwalenia.'}</p></div><span class="topic-badge">${isPractice ? '✏️ Ćwiczenia' : '🔁 Powtórka'}</span></div>
+    ${!isPractice && quickFacts.length ? `<section class="review-key-facts"><h4>Najważniejsze do powtórzenia</h4>${quickFacts.map((fact) => `<p>${escapeHTML(fact)}</p>`).join('')}</section>` : ''}${exercises || emptyState('Ćwiczenia pojawią się po dodaniu materiału', 'W tym temacie nie ma jeszcze ćwiczeń do sprawdzenia.', '🌱')}
+    <label class="review-row"><span><strong>Oznacz temat jako powtórzony</strong><small>${escapeHTML(lesson.title)}</small></span><input class="review-check" type="checkbox" data-review="${lessonIndex}" ${progress.done[lessonKey(lessonIndex)] ? 'checked' : ''} aria-label="Oznacz ${escapeHTML(lesson.title)} jako powtórzony" /></label>
+    <div class="review-progress">🌟 Powtórzone tematy: ${doneCount} z ${items.length}</div><p class="gentle-message">Co jeszcze trzeba powtórzyć?</p>`;
+}
+
+function renderPractice() { return renderReview(true); }
+
+function oralQuestions() {
+  const lesson = currentLesson();
+  return [...quizQuestions(lesson).map((question, index) => ({
+    prompt: question.question,
+    answer: question.type === 'open' ? (question.acceptedAnswers ?? []).join(' lub ') : question.answers?.[question.correct],
+    explanation: question.explanation,
+    id: `oral-quiz-${index}`,
+  })), ...(lesson?.reviewExercises ?? []).map((exercise, index) => ({
+    prompt: exercise.prompt,
+    answer: exercise.type === 'choice' || exercise.type === 'truefalse' ? exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : exercise.acceptedAnswers?.join(' lub '),
+    explanation: exercise.hint,
+    id: `oral-review-${index}`,
+  }))].filter((item) => item.prompt);
+}
+
+function renderOral() {
+  const questions = oralQuestions();
+  if (!questions.length) return emptyState('Pytania ustne pojawią się po dodaniu materiału', 'Możecie wtedy spokojnie ćwiczyć razem.', '🎯');
+  if (oralIndex >= questions.length) return `<div class="oral-session-end"><h3>Gotowe! 🌱</h3><p>Dzisiaj przećwiczyliście ${oralSessionDone} pytań.</p><p>Do powtórzenia zostało ${appData.errors.filter((item) => !item.mastered).length}.</p><button type="button" data-reset-oral>Jeszcze raz</button></div>`;
+  const item = questions[oralIndex];
+  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${escapeHTML(item.prompt)}</h4>${item.answer ? `<details class="oral-answer"><summary>Pokaż przykładową odpowiedź</summary><p>${escapeHTML(item.answer)} ${item.explanation ? escapeHTML(item.explanation) : ''}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
+}
+
+function renderTopicLinks(entries, emptyText) {
+  if (!entries.length) return emptyState('Na razie pusto', emptyText, '🌱');
+  return `<div class="personal-topic-list">${entries.map(({subject,lesson,index,extra=''})=>`<article><button type="button" data-direct-topic="${subject.id}:${index}">📘 ${escapeHTML(lesson.title)} <small>${escapeHTML(subject.name)}</small></button>${extra}</article>`).join('')}</div>`;
+}
+
+function renderFavorites() {
+  const entries = appData.favorites.map(resolveTopic).filter(Boolean);
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>⭐ Moje do nauki</h3>${renderTopicLinks(entries, 'Dodaj gwiazdkę przy temacie, do którego chcesz wrócić.')}`;
+}
+
+function renderErrors() {
+  const entries = appData.errors.filter((item) => !item.mastered);
+  const cards = entries.map((item) => { const found=resolveTopic(topicRef(item.subjectId,item.lessonIndex)); return `<article class="saved-error"><p>${escapeHTML(item.prompt)}</p><small>${found?`${escapeHTML(found.lesson.title)} · ${escapeHTML(found.subject.name)}`:'Temat'}</small><details><summary>Pokaż odpowiedź i wyjaśnienie</summary><p>Twoja odpowiedź: ${escapeHTML(item.lastAnswer)}</p><p>Poprawna odpowiedź: ${escapeHTML(item.correctAnswer ?? '')}</p><p>${escapeHTML(item.explanation ?? '')}</p></details><button type="button" data-error-mastered="${escapeHTML(item.id)}">Oznacz jako opanowane</button>${found?`<button type="button" data-direct-topic="${found.subject.id}:${found.index}">Wróć do tematu</button>`:''}</article>`; }).join('');
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>🔁 Powtórz moje błędy</h3><p>Masz ${entries.length} rzeczy do powtórzenia. Spokojnie, każda próba pomaga.</p>${cards?`<div class="personal-topic-list">${cards}</div>`:emptyState('Na razie nie ma błędów do powtórzenia.', 'Świetnie, możesz wybrać kolejny temat. 🌱')}`;
+}
+
+function renderFiveMinutes() {
+  const errors = appData.errors.filter((item) => !item.mastered).slice(0, 5);
+  const entries = errors.length ? errors.map((item) => ({ prompt:item.prompt, answer:item.correctAnswer, explanation:item.explanation, ref:topicRef(item.subjectId,item.lessonIndex) })) : subjects.flatMap((subject) => subject.lessons.flatMap((lesson,index) => quizQuestions(lesson).slice(0,1).map((question) => ({prompt:question.question,answer:question.type==='open'?(question.acceptedAnswers??[]).join(' lub '):question.answers?.[question.correct],explanation:question.explanation,ref:topicRef(subject.id,index)})))).slice(0,5);
+  const flashFacts = subjects.flatMap((subject) => subject.lessons.flatMap((lesson,index) => (lesson.importantFacts ?? []).slice(0,1).map((fact) => ({fact, title:lesson.title, subject:subject.name, ref:topicRef(subject.id,index)})))).slice(0,3);
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>⚡ Mam 5 minut</h3><p>Krótka, spokojna sesja. Zacznij od rzeczy, które warto powtórzyć.</p><section class="review-key-facts"><h4>Najważniejsze wskazówki</h4>${flashFacts.map((item)=>`<p>${escapeHTML(item.fact)} <small>(${escapeHTML(item.title)} · ${escapeHTML(item.subject)})</small></p>`).join('')}</section><section class="five-minute-questions"><h4>${errors.length?'Pytania wymagające powtórki':'Krótkie pytania'}</h4>${entries.length?entries.map((item,index)=>`<article><p>${index+1}. ${escapeHTML(item.prompt)}</p><details><summary>Pokaż odpowiedź</summary><p>${escapeHTML(item.answer??'')}${item.explanation?` — ${escapeHTML(item.explanation)}`:''}</p></details><button type="button" data-direct-topic="${escapeHTML(item.ref)}">Otwórz temat</button></article>`).join(''):emptyState('Dodajemy krótkie pytania', 'Skorzystaj z listy tematów i wybierz materiał do nauki.', '📝')}</section>`;
+}
+
+function renderProgress() {
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>📊 Moje postępy</h3>${subjects.map((subject)=>{const done=subject.lessons.filter((_,index)=>progress.done[topicRef(subject.id,index)]).length;return `<section class="subject-progress"><div class="subject-progress-label"><strong>${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</strong><span>${done}/${subject.lessons.length} tematów</span></div><div class="subject-progress-track"><b style="width:${subject.lessons.length?Math.round(done/subject.lessons.length*100):0}%"></b></div></section>`}).join('')}`;
+}
+
+function renderToday() {
+  const refs=[...(appData.recentTopics??[]),...appData.favorites,...appData.errors.filter((item)=>!item.mastered).map((item)=>topicRef(item.subjectId,item.lessonIndex))];
+  const unique=[...new Set(refs)].map(resolveTopic).filter(Boolean).slice(0,5);
+  const entries=unique.length?unique:subjects.flatMap((subject)=>subject.lessons.map((lesson,index)=>({subject,lesson,index}))).slice(0,5);
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>🏠 Dzisiaj się uczę</h3><p>Wybierz jedną małą rzecz na dziś. 🌱</p>${renderTopicLinks(entries,'Wybierz temat i zrób mały krok.')}`;
 }
 
 function renderPanel() {
-  panel.innerHTML = ({ notes: renderNotes, quiz: renderQuiz, cheatsheet: renderCheatsheet, review: renderReview })[activeTab]();
-  panel.querySelectorAll('[data-note-toggle]').forEach((button) => button.addEventListener('click', () => {
-    const topicIndex = button.dataset.noteToggle;
-    const isOpening = button.getAttribute('aria-expanded') !== 'true';
-    panel.querySelectorAll('[data-note-topic]').forEach((topic) => {
-      const topicButton = topic.querySelector('[data-note-toggle]');
-      const content = topic.querySelector('.study-topic-content');
-      const shouldOpen = topic.dataset.noteTopic === topicIndex && isOpening;
-      topicButton.setAttribute('aria-expanded', String(shouldOpen));
-      topicButton.querySelector('.study-toggle-icons').textContent = shouldOpen ? '🔽' : '▶️';
-      topic.classList.toggle('is-open', shouldOpen);
-      content.hidden = !shouldOpen;
-    });
+  const screens = { topics: renderTopicList, materials: renderMaterialMenu, content: renderMaterialContent, today: renderToday, favorites: renderFavorites, errors: renderErrors, fiveMinutes: renderFiveMinutes, progress: renderProgress };
+  panel.innerHTML = (screens[activeView] ?? renderTopicList)();
+  renderHomeDashboard();
+  panel.querySelectorAll('[data-open-topic]').forEach((button) => button.addEventListener('click', () => {
+    lessonIndex = Number(button.dataset.openTopic);
+    activeView = 'materials';
+    appData.recentTopics = [topicRef(), ...(appData.recentTopics ?? []).filter((ref) => ref !== topicRef())].slice(0, 10);
+    localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+    renderHomeDashboard();
+    quizAnswers = {};
+    quizGraded = false;
+    reviewAnswers = {};
+    reviewResults = {};
+    renderPanel();
   }));
-  panel.querySelectorAll('[data-quiz-lesson]').forEach((button) => button.addEventListener('click', () => {
-    lessonIndex = Number(button.dataset.quizLesson);
+  panel.querySelectorAll('[data-open-material]').forEach((button) => button.addEventListener('click', () => {
+    activeTab = button.dataset.openMaterial;
+    activeView = 'content';
+    if (activeTab === 'oral') { oralIndex = 0; oralSessionDone = 0; }
     quizAnswers = {};
     quizGraded = false;
     renderPanel();
   }));
+  panel.querySelector('[data-toggle-favorite]')?.addEventListener('click', () => {
+    toggleFavorite();
+    renderPanel();
+  });
+  panel.querySelectorAll('[data-nav]').forEach((button) => button.addEventListener('click', () => {
+    if (button.dataset.nav === 'subjects') {
+      activeView = 'topics';
+      showDashboard = true;
+      renderPanel();
+      if (window.matchMedia('(max-width: 680px)').matches) {
+        mobileSubjectSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        mobileSubjectSelect.focus({ preventScroll: true });
+      } else {
+        subjectList.querySelector('[data-subject]')?.focus();
+      }
+      return;
+    }
+    activeView = button.dataset.nav;
+    renderPanel();
+  }));
+  panel.querySelectorAll('[data-direct-topic]').forEach((button) => button.addEventListener('click', () => {
+    const [subjectId, rawIndex] = button.dataset.directTopic.split(':');
+    const foundSubject = subjects.find((subject) => subject.id === subjectId);
+    if (!foundSubject?.lessons[Number(rawIndex)]) return;
+    activeSubject = foundSubject;
+    lessonIndex = Number(rawIndex);
+    showDashboard = false;
+    activeView = 'materials';
+    document.querySelector('#subject-title').textContent = activeSubject.name;
+    document.querySelector('#current-subject-crumb').textContent = activeSubject.name;
+    appData.recentTopics = [topicRef(), ...(appData.recentTopics ?? []).filter((ref) => ref !== topicRef())].slice(0, 10);
+    localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+    renderSubjects();
+    renderPanel();
+  }));
+  panel.querySelectorAll('[data-error-mastered]').forEach((button) => button.addEventListener('click', () => {
+    const item = appData.errors.find((error) => error.id === button.dataset.errorMastered);
+    if (item) { item.mastered = true; item.masteredAt = Date.now(); saveAppData(); renderPanel(); }
+  }));
+  panel.querySelector('[data-print-material]')?.addEventListener('click', () => window.print());
+  panel.querySelector('[data-read-notes]')?.addEventListener('click', () => {
+    if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return;
+    window.speechSynthesis.cancel();
+    const text = panel.querySelector('.learning-content-body')?.innerText ?? '';
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    utterance.lang = 'pl-PL';
+    window.speechSynthesis.speak(utterance);
+  });
+  panel.querySelector('[data-stop-reading]')?.addEventListener('click', () => window.speechSynthesis?.cancel());
+  panel.querySelectorAll('[data-oral-result]').forEach((button) => button.addEventListener('click', () => {
+    const item = oralQuestions()[oralIndex];
+    if (!item) return;
+    oralSessionDone += 1;
+    if (button.dataset.oralResult === 'repeat') saveError({ itemId: item.id, prompt: item.prompt, answer: 'Odpowiedź ustna do powtórzenia', correctAnswer: item.answer, explanation: item.explanation, source: 'oral' });
+    oralIndex += 1;
+    renderPanel();
+  }));
+  panel.querySelector('[data-reset-oral]')?.addEventListener('click', () => { oralIndex = 0; oralSessionDone = 0; renderPanel(); });
   panel.querySelectorAll('[data-choice]').forEach((button) => button.addEventListener('click', () => {
     const questionIndex = Number(button.dataset.choice);
     quizAnswers[questionIndex] = Number(button.dataset.value);
@@ -203,10 +444,6 @@ function renderPanel() {
   }));
   panel.querySelectorAll('[data-check-open]').forEach((button) => button.addEventListener('click', () => gradeOpenQuestion(Number(button.dataset.checkOpen))));
   panel.querySelector('[data-check-quiz]')?.addEventListener('click', gradeQuiz);
-  panel.querySelectorAll('[data-review-lesson]').forEach((button) => button.addEventListener('click', () => {
-    lessonIndex = Number(button.dataset.reviewLesson);
-    renderPanel();
-  }));
   panel.querySelectorAll('[data-review-answer]').forEach((input) => input.addEventListener('input', () => {
     const key = `${activeSubject.id}:${lessonIndex}:${input.dataset.reviewAnswer}`;
     reviewAnswers[key] = input.value;
@@ -223,6 +460,7 @@ function renderPanel() {
     const isChoice = exercise?.type === 'choice' || exercise?.type === 'truefalse';
     const expected = isChoice ? exercise.correct : exercise?.acceptedAnswers ?? [];
     reviewResults[key] = isChoice ? Number(answer) === Number(expected) : expected.some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer));
+    if (!reviewResults[key]) saveError({ itemId: `exercise-${exerciseIndex}`, prompt: exercise?.prompt, answer: isChoice ? exercise?.options?.[Number(answer)] : answer, correctAnswer: isChoice ? exercise?.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : expected.join(' lub '), explanation: exercise?.hint, source: 'exercise' });
     renderPanel();
   }));
   panel.querySelectorAll('[data-review-choice]').forEach((button) => button.addEventListener('click', () => {
@@ -237,14 +475,6 @@ function renderPanel() {
     saveProgress();
     renderPanel();
   }));
-  document.querySelector('#back-to-subjects')?.addEventListener('click', () => {
-    if (window.matchMedia('(max-width: 680px)').matches) {
-      mobileSubjectSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      mobileSubjectSelect.focus({ preventScroll: true });
-    } else {
-      subjectList.querySelector('[data-subject]')?.focus();
-    }
-  });
 }
 
 function normalizeAnswer(value) {
@@ -301,6 +531,7 @@ function gradeQuiz() {
 
     answeredCount += 1;
     if (correct) correctCount += 1;
+    if (!correct) saveError({ itemId: `quiz-${questionIndex}`, prompt: question.question, answer: isOpen ? rawAnswer : question.answers?.[Number(rawAnswer)], correctAnswer: isOpen ? (question.acceptedAnswers ?? []).join(' lub ') : question.answers?.[question.correct], explanation, source: 'quiz' });
     feedback.textContent = isOpen
       ? (correct
         ? `Dobrze! 🎉 ${explanation}`
@@ -321,7 +552,12 @@ function gradeQuiz() {
     }
   });
 
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+  renderHomeDashboard();
+
   quizGraded = answeredCount === questions.length;
+  if (quizGraded) appData.testScores[topicRef()] = Math.round(correctCount / questions.length * 100);
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
   const score = panel.querySelector('#quiz-score');
   score.innerHTML = answeredCount < questions.length
     ? `Na razie: ${correctCount} poprawnych z ${answeredCount} sprawdzonych. Uzupełnij pozostałe odpowiedzi.`
@@ -331,23 +567,11 @@ function gradeQuiz() {
     }) ? `<div class="quiz-review-list"><strong>Warto jeszcze powtórzyć:</strong> ${questions.map((question, index) => {
       const answer = quizAnswers[index];
       const correct = question.type === 'open' ? (question.acceptedAnswers ?? []).some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer)) : Number(answer) === question.correct;
-      return correct ? '' : index + 1;
+      return correct ? '' : `<a href="#quiz-question-${index}">${index + 1}</a>`;
     }).filter(Boolean).join(', ')}</div>` : ''}`;
   const submit = panel.querySelector('[data-check-quiz]');
   submit.disabled = quizGraded;
 }
-
-tabs.forEach((tab) => tab.addEventListener('click', () => {
-  activeTab = tab.dataset.tab;
-  quizAnswers = {};
-  quizGraded = false;
-  tabs.forEach((item) => {
-    const selected = item === tab;
-    item.classList.toggle('active', selected);
-    item.setAttribute('aria-selected', String(selected));
-  });
-  renderPanel();
-}));
 
 renderSubjects();
 renderPanel();
