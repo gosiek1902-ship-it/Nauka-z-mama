@@ -88,18 +88,20 @@ function renderLessonNotes(lesson, index) {
       <div class="vocabulary-list">${section.vocabulary.map(({ en, pl }) => `<div class="vocabulary-pair"><strong>${escapeHTML(en)}</strong><span>${escapeHTML(pl)}</span></div>`).join('')}</div>
       <div class="sentence-examples"><strong>Proste zdania</strong>${section.examples.map(({ en, pl }) => `<div><span>${escapeHTML(en)}</span><small>${escapeHTML(pl)}</small></div>`).join('')}</div>
     </section>`).join('');
-  const oldNotes = !sections && !vocabSections ? `<p>${escapeHTML(lesson.summary ?? '')}</p>${lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(lesson.examples)}</p>` : ''}` : '';
-  return `<article class="topic-card study-lesson-card"><h4><span class="topic-number">${String(index + 1).padStart(2, '0')}</span>${escapeHTML(lesson.title)}</h4><p class="language-lesson-intro">${escapeHTML(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join('')}</ul></section>` : ''}</article>`;
+  const oldNotes = !sections && !vocabSections && lesson.examples ? `<p class="study-example"><strong>Przykład:</strong> ${escapeHTML(lesson.examples)}</p>` : '';
+  return `<details class="topic-card study-lesson-card" data-note-accordion><summary class="study-lesson-toggle"><span class="study-toggle-icons" aria-hidden="true"><span class="study-closed-icon">▶️</span><span class="study-open-icon">🔽</span></span><span class="topic-number">${String(index + 1).padStart(2, '0')}</span><span class="study-lesson-title">${escapeHTML(lesson.title)}</span></summary><div class="study-lesson-content"><p class="language-lesson-intro">${escapeHTML(lesson.summary ?? '')}</p>${oldNotes}<div class="study-sections">${sections}</div>${definitions ? `<section class="definitions-section"><h5>📚 Ważne pojęcia</h5><div class="definition-grid">${definitions}</div></section>` : ''}${vocabSections ? `<div class="vocab-sections">${vocabSections}</div>` : ''}${lesson.importantFacts?.length ? `<section class="summary-card"><h5>✅ Podsumowanie</h5><ul>${lesson.importantFacts.map((fact) => `<li>${escapeHTML(fact)}</li>`).join('')}</ul></section>` : ''}</div></details>`;
 }
 
 function renderNotes() {
   const items = lessons();
+  const doneCount = items.filter((_, index) => progress.done[lessonKey(index)]).length;
+  const progressCard = `<div class="subject-progress"><div class="subject-progress-label"><strong>Twój postęp</strong><span>Ukończone tematy: ${doneCount}/${items.length}</span></div><div class="subject-progress-track" role="progressbar" aria-label="Ukończone tematy" aria-valuemin="0" aria-valuemax="${items.length}" aria-valuenow="${doneCount}"><span style="width:${items.length ? Math.round(doneCount / items.length * 100) : 0}%"></span></div></div>`;
   if (!items.length) return `
     <div class="panel-head"><div><h3>Moje notatki</h3><p class="panel-subtitle">Tutaj zbieramy najważniejsze rzeczy z lekcji.</p></div><span class="topic-badge">${activeSubject.icon} ${activeSubject.name}</span></div>
-    ${emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu notatki, przykłady i ćwiczenia, kiedy będziesz gotowy.', '📒')}`;
+    ${progressCard}${emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu notatki, przykłady i ćwiczenia, kiedy będziesz gotowy.', '📒')}`;
   return `
     <div class="panel-head"><div><h3>Moje notatki</h3><p class="panel-subtitle">Krótkie wyjaśnienia i przykłady, które pomagają zapamiętać.</p></div><span class="topic-badge">${items.length} ${items.length === 1 ? 'temat' : 'tematy'}</span></div>
-    <div class="topic-grid">${items.map(renderLessonNotes).join('')}</div>`;
+    ${progressCard}<div class="topic-grid notes-accordion-list">${items.map(renderLessonNotes).join('')}</div>`;
 }
 
 function renderQuiz() {
@@ -144,7 +146,9 @@ function renderReview() {
     const field = isChoice
       ? `<div class="review-choice-list">${(exercise.options ?? ['Prawda', 'Fałsz']).map((option, optionIndex) => `<button type="button" class="review-choice ${reviewAnswers[key] === optionIndex ? 'selected' : ''}" data-review-choice="${index}" data-review-value="${optionIndex}">${escapeHTML(option)}</button>`).join('')}</div><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button>`
       : `<div class="review-answer-controls"><input id="review-answer-${index}" type="text" data-review-answer="${index}" value="${escapeHTML(reviewAnswers[key] ?? '')}" placeholder="${exercise.type === 'open' ? 'Odpowiedz własnymi słowami' : 'Wpisz odpowiedź'}" autocomplete="off" /><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button></div>`;
-    return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${escapeHTML(exercise.prompt)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div></div>`;
+    const knownAnswer = isChoice ? exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : exercise.acceptedAnswers?.join(' lub ');
+    const answerReveal = knownAnswer ? `<details class="review-answer-reveal"><summary>▶️ Pokaż odpowiedź</summary><p>${escapeHTML(knownAnswer)}</p></details>` : '';
+    return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${escapeHTML(exercise.prompt)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div>${answerReveal}</div>`;
   }).join('')}</div>` : '';
   return `<div class="panel-head"><div><h3>Powtórka</h3><p class="panel-subtitle">Przypomnij sobie temat i zaznacz go jako powtórzony.</p></div><span class="topic-badge">🔁 Małe kroki!</span></div>
     ${topicPicker}${exercises}
@@ -154,6 +158,12 @@ function renderReview() {
 
 function renderPanel() {
   panel.innerHTML = ({ notes: renderNotes, quiz: renderQuiz, cheatsheet: renderCheatsheet, review: renderReview })[activeTab]();
+  const noteAccordions = [...panel.querySelectorAll('[data-note-accordion]')];
+  noteAccordions.forEach((lesson) => lesson.addEventListener('toggle', () => {
+    if (lesson.open) noteAccordions.forEach((otherLesson) => {
+      if (otherLesson !== lesson) otherLesson.open = false;
+    });
+  }));
   panel.querySelectorAll('[data-quiz-lesson]').forEach((button) => button.addEventListener('click', () => {
     lessonIndex = Number(button.dataset.quizLesson);
     quizAnswers = {};
@@ -218,6 +228,14 @@ function renderPanel() {
     saveProgress();
     renderPanel();
   }));
+  document.querySelector('#back-to-subjects')?.addEventListener('click', () => {
+    if (window.matchMedia('(max-width: 680px)').matches) {
+      mobileSubjectSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      mobileSubjectSelect.focus({ preventScroll: true });
+    } else {
+      subjectList.querySelector('[data-subject]')?.focus();
+    }
+  });
 }
 
 function normalizeAnswer(value) {
@@ -296,9 +314,16 @@ function gradeQuiz() {
 
   quizGraded = answeredCount === questions.length;
   const score = panel.querySelector('#quiz-score');
-  score.textContent = answeredCount < questions.length
+  score.innerHTML = answeredCount < questions.length
     ? `Na razie: ${correctCount} poprawnych z ${answeredCount} sprawdzonych. Uzupełnij pozostałe odpowiedzi.`
-    : `Twój wynik: ${correctCount} z ${questions.length}. ${correctCount === questions.length ? 'Brawo, świetna robota! 🌟' : 'Każda odpowiedź to okazja do nauki! 💛'}`;
+    : `<strong>TWÓJ WYNIK</strong><span>${correctCount}/${questions.length} · ${Math.round(correctCount / questions.length * 100)}%</span><small>${correctCount === questions.length ? 'Brawo, świetna robota! 🌟' : 'Każda odpowiedź to okazja do nauki! 💛'}</small>${questions.some((question, index) => {
+      const answer = quizAnswers[index];
+      return !(question.type === 'open' ? (question.acceptedAnswers ?? []).some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer)) : Number(answer) === question.correct);
+    }) ? `<div class="quiz-review-list"><strong>Warto jeszcze powtórzyć:</strong> ${questions.map((question, index) => {
+      const answer = quizAnswers[index];
+      const correct = question.type === 'open' ? (question.acceptedAnswers ?? []).some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer)) : Number(answer) === question.correct;
+      return correct ? '' : index + 1;
+    }).filter(Boolean).join(', ')}</div>` : ''}`;
   const submit = panel.querySelector('[data-check-quiz]');
   submit.disabled = quizGraded;
 }
