@@ -9,6 +9,12 @@ const subjectList = document.querySelector('#subject-list');
 const mobileSubjectSelect = document.querySelector('#mobile-subject-select');
 const panel = document.querySelector('#panel');
 const homeDashboard = document.querySelector('#home-dashboard');
+const resetDialog = document.querySelector('#reset-confirmation');
+const resetDialogTitle = document.querySelector('#reset-dialog-title');
+const resetDialogMessage = document.querySelector('#reset-dialog-message');
+const resetConfirmButton = document.querySelector('.reset-confirm');
+const resetCancelButton = document.querySelector('.reset-cancel');
+const appToast = document.querySelector('#app-toast');
 let activeSubject = subjects.find((subject) => subject.id === 'matematyka') ?? subjects[0];
 let activeTab = 'notes';
 let activeView = 'topics';
@@ -22,6 +28,8 @@ let oralIndex = 0;
 let oralSessionDone = 0;
 let progress = loadProgress();
 let appData = loadAppData();
+let pendingResetAction = null;
+let toastTimer = null;
 
 function loadProgress() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? { done: {} }; }
@@ -65,6 +73,75 @@ function saveError({ subjectId = activeSubject.id, index = lessonIndex, itemId, 
     appData.errors.push({ id, subjectId, lessonIndex: index, itemId, prompt, lastAnswer: String(answer ?? ''), correctAnswer, explanation, source, attempts: 1, mastered: false, updatedAt: Date.now() });
   }
   localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+}
+
+function canManageTestData() {
+  // Przyszłe ograniczenie: zwracaj true tylko w trybie 👩 Mama.
+  return true;
+}
+
+function showAppToast(message) {
+  appToast.textContent = message;
+  appToast.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => appToast.classList.remove('visible'), 5000);
+}
+
+function askResetConfirmation({ title, message, confirmLabel, action, successMessage }) {
+  if (!canManageTestData()) return;
+  resetDialogTitle.textContent = title;
+  resetDialogMessage.textContent = message;
+  resetConfirmButton.textContent = confirmLabel;
+  pendingResetAction = () => {
+    action();
+    renderPanel();
+    showAppToast(successMessage);
+  };
+  if (typeof resetDialog.showModal === 'function') resetDialog.showModal();
+  else resetDialog.setAttribute('open', '');
+}
+
+resetCancelButton.addEventListener('click', () => {
+  pendingResetAction = null;
+  resetDialog.close();
+});
+
+resetConfirmButton.addEventListener('click', () => {
+  const action = pendingResetAction;
+  pendingResetAction = null;
+  resetDialog.close();
+  action?.();
+});
+
+function clearSavedErrors() {
+  appData.errors = [];
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+}
+
+function resetResultsAndProgress() {
+  appData = { ...appData, errors: [], testScores: {}, testHistory: [] };
+  progress = { done: {} };
+  quizAnswers = {};
+  quizGraded = false;
+  reviewAnswers = {};
+  reviewResults = {};
+  oralIndex = 0;
+  oralSessionDone = 0;
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+}
+
+function clearAllUserData() {
+  localStorage.removeItem(APP_DATA_KEY);
+  localStorage.removeItem(STORAGE_KEY);
+  appData = loadAppData();
+  progress = loadProgress();
+  quizAnswers = {};
+  quizGraded = false;
+  reviewAnswers = {};
+  reviewResults = {};
+  oralIndex = 0;
+  oralSessionDone = 0;
 }
 
 function renderSubjects() {
@@ -317,7 +394,7 @@ function renderFavorites() {
 function renderErrors() {
   const entries = appData.errors.filter((item) => !item.mastered);
   const cards = entries.map((item) => { const found=resolveTopic(topicRef(item.subjectId,item.lessonIndex)); return `<article class="saved-error"><p>${escapeHTML(item.prompt)}</p><small>${found?`${escapeHTML(found.lesson.title)} · ${escapeHTML(found.subject.name)}`:'Temat'}</small><details><summary>Pokaż odpowiedź i wyjaśnienie</summary><p>Twoja odpowiedź: ${escapeHTML(item.lastAnswer)}</p><p>Poprawna odpowiedź: ${escapeHTML(item.correctAnswer ?? '')}</p><p>${escapeHTML(item.explanation ?? '')}</p></details><button type="button" data-error-mastered="${escapeHTML(item.id)}">Oznacz jako opanowane</button>${found?`<button type="button" data-direct-topic="${found.subject.id}:${found.index}">Wróć do tematu</button>`:''}</article>`; }).join('');
-  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>🔁 Powtórz moje błędy</h3><p>Masz ${entries.length} rzeczy do powtórzenia. Spokojnie, każda próba pomaga.</p>${cards?`<div class="personal-topic-list">${cards}</div>`:emptyState('Na razie nie ma błędów do powtórzenia.', 'Świetnie, możesz wybrać kolejny temat. 🌱')}`;
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>🔁 Powtórz moje błędy</h3><p>Masz ${entries.length} rzeczy do powtórzenia. Spokojnie, każda próba pomaga.</p>${cards?`<div class="personal-topic-list">${cards}</div>`:emptyState('Na razie nie ma błędów do powtórzenia.', 'Świetnie, możesz wybrać kolejny temat. 🌱')}<div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="errors">🧹 Wyczyść moje błędy</button></div>`;
 }
 
 function renderFiveMinutes() {
@@ -328,7 +405,7 @@ function renderFiveMinutes() {
 }
 
 function renderProgress() {
-  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>📊 Moje postępy</h3>${subjects.map((subject)=>{const done=subject.lessons.filter((_,index)=>progress.done[topicRef(subject.id,index)]).length;return `<section class="subject-progress"><div class="subject-progress-label"><strong>${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</strong><span>${done}/${subject.lessons.length} tematów</span></div><div class="subject-progress-track"><b style="width:${subject.lessons.length?Math.round(done/subject.lessons.length*100):0}%"></b></div></section>`}).join('')}`;
+  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>📊 Moje postępy</h3>${subjects.map((subject)=>{const done=subject.lessons.filter((_,index)=>progress.done[topicRef(subject.id,index)]).length;return `<section class="subject-progress"><div class="subject-progress-label"><strong>${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</strong><span>${done}/${subject.lessons.length} tematów</span></div><div class="subject-progress-track"><b style="width:${subject.lessons.length?Math.round(done/subject.lessons.length*100):0}%"></b></div></section>`}).join('')}<div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="results">♻️ Wyzeruj moje wyniki</button><button type="button" class="data-reset-button quiet" data-reset="all">🧹 Wyczyść wszystkie dane testowe</button></div>`;
 }
 
 function renderToday() {
@@ -400,6 +477,33 @@ function renderPanel() {
   panel.querySelectorAll('[data-error-mastered]').forEach((button) => button.addEventListener('click', () => {
     const item = appData.errors.find((error) => error.id === button.dataset.errorMastered);
     if (item) { item.mastered = true; item.masteredAt = Date.now(); saveAppData(); renderPanel(); }
+  }));
+  panel.querySelectorAll('[data-reset]').forEach((button) => button.addEventListener('click', () => {
+    const resetType = button.dataset.reset;
+    const config = {
+      errors: {
+        title: 'Wyczyść zapisane błędy?',
+        message: 'Czy na pewno chcesz usunąć wszystkie zapisane błędy?',
+        confirmLabel: 'TAK, WYCZYŚĆ',
+        action: clearSavedErrors,
+        successMessage: 'Gotowe! Lista błędów została wyczyszczona.',
+      },
+      results: {
+        title: 'Wyzeruj wyniki i postępy?',
+        message: 'Czy na pewno chcesz wyzerować wyniki i postępy?',
+        confirmLabel: 'TAK, WYZERUJ',
+        action: resetResultsAndProgress,
+        successMessage: 'Gotowe! Wyniki i postępy zostały wyzerowane.',
+      },
+      all: {
+        title: 'Wyczyść wszystkie dane testowe?',
+        message: 'Czy na pewno chcesz wyczyścić wszystkie zapisane dane korzystania z aplikacji? Materiały edukacyjne pozostaną bez zmian.',
+        confirmLabel: 'TAK, WYCZYŚĆ',
+        action: clearAllUserData,
+        successMessage: 'Gotowe! Dane użytkownika zostały wyczyszczone.',
+      },
+    };
+    if (config[resetType]) askResetConfirmation(config[resetType]);
   }));
   panel.querySelector('[data-print-material]')?.addEventListener('click', () => window.print());
   panel.querySelector('[data-read-notes]')?.addEventListener('click', () => {

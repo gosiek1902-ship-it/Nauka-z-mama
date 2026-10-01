@@ -45,6 +45,7 @@
           </section>
 
           <section id="home-dashboard" class="home-dashboard" aria-label="Dzisiejsze propozycje nauki"></section>
+          <div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
 
           <div class="section-heading"><div class="section-title-group"><span class="eyebrow">WYBIERZ PRZEDMIOT</span><button class="back-to-subjects" id="back-to-subjects" type="button">← Wszystkie przedmioty</button><label class="mobile-subject-picker"><span class="visually-hidden">Wybierz przedmiot</span><select id="mobile-subject-select" aria-label="Wybierz przedmiot"><option value="" selected disabled>Wybierz przedmiot ▼</option></select></label><h2 id="subject-title">Matematyka</h2></div><span class="class-pill">📚 Klasa 5</span></div>
           <section id="panel" class="panel" role="region" aria-live="polite"></section>
@@ -52,5 +53,15 @@
         </div>
       </main>
     </div>
+    <dialog id="reset-confirmation" class="reset-dialog" aria-labelledby="reset-dialog-title" aria-describedby="reset-dialog-message">
+      <form method="dialog" class="reset-dialog-form">
+        <h2 id="reset-dialog-title">Potwierdź działanie</h2>
+        <p id="reset-dialog-message"></p>
+        <div class="reset-dialog-actions">
+          <button type="button" class="reset-cancel">ANULUJ</button>
+          <button type="button" class="reset-confirm">TAK, WYCZYŚĆ</button>
+        </div>
+      </form>
+    </dialog>
   </body>
 </html>
