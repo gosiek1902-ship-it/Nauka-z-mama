@@ -454,7 +454,9 @@ function cleanSpeechText(text) {
   return String(text ?? '')
     .replace(/[#*0-9]\uFE0F?\u20E3/gu, '')
     .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\p{So}\uFE0E\uFE0F\u200D\u20E3]/gu, '')
-    .replace(/[\u2022\u25AA-\u25AB\u25B6-\u25B7\u25CB\u25CF\u2190-\u21FF]/gu, '')
+    .replace(/[=|\u2022\u25AA-\u25AB\u25B6-\u25B7\u25CB\u25CF\u2190-\u21FF]/gu, ', ')
+    .replace(/\s*,\s*/g, ', ')
+    .replace(/(?:,\s*){2,}/g, ', ')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
