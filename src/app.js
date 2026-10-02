@@ -183,9 +183,10 @@ function canManageTestData() {
 
 function updateChildModeLabel() {
   const childModeChoice = document.querySelector('[data-mode-choice="aleksander"]');
-  const childName = appData.profile.name;
-  const childIcon = appData.activeChildId === 'daughter' ? '👧' : '👦';
-  if (childModeChoice) childModeChoice.textContent = `${childIcon} ${childName}`;
+  const selectableChildId = appData.mode === 'mama' ? appData.activeChildId : 'aleksander';
+  const child = appData.children[selectableChildId];
+  const childIcon = selectableChildId === 'daughter' ? '👧' : '👦';
+  if (childModeChoice) childModeChoice.textContent = `${childIcon} ${child.profile.name}`;
 }
 
 function questionNumberFromId(itemId) {
@@ -244,6 +245,11 @@ function setMode(mode) {
   if (mode === 'mama') {
     showMamaAuthentication();
     return;
+  }
+  const mamaIsChoosingSelectedChild = mamaAuthenticated && appData.mode === 'mama';
+  if (!mamaIsChoosingSelectedChild) {
+    setActiveChildProfile('aleksander');
+    renderSubjects();
   }
   mamaAuthenticated = false;
   activateMode('aleksander');
@@ -392,6 +398,17 @@ function childHomeView(childId) {
 
 function selectChildProfile(childId) {
   if (!appData.children[childId] || !canManageTestData()) return;
+  setActiveChildProfile(childId);
+  updateChildModeLabel();
+  activeView = 'mother';
+  showDashboard = false;
+  persistUserData();
+  renderSubjects();
+  renderPanel();
+}
+
+function setActiveChildProfile(childId) {
+  if (!appData.children[childId]) return false;
   appData.progress = progress;
   appData.activeChildId = childId;
   progress = appData.progress;
@@ -408,12 +425,7 @@ function selectChildProfile(childId) {
   reviewResults = {};
   document.querySelector('#subject-title').textContent = childId === 'daughter' ? `${appData.profile.name} · ${displayChildGrade(appData.profile)}` : activeSubject.name;
   document.querySelector('#current-subject-crumb').textContent = appData.profile.name;
-  updateChildModeLabel();
-  activeView = 'mother';
-  showDashboard = false;
-  persistUserData();
-  renderSubjects();
-  renderPanel();
+  return true;
 }
 
 function renderSubjects() {
@@ -1381,7 +1393,6 @@ function gradeQuiz() {
 
 renderSubjects();
 modeSwitchButton.textContent = appData.mode === 'mama' ? '👩 Mama' : `${appData.activeChildId === 'daughter' ? '👧' : '👦'} ${appData.profile.name}`;
-updateChildModeLabel();
 activeView = appData.mode === 'mama' ? 'mother' : childHomeView(appData.activeChildId);
 showDashboard = appData.mode !== 'mama' && appData.activeChildId !== 'daughter';
 if (appData.activeChildId === 'daughter') {
