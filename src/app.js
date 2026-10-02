@@ -24,6 +24,9 @@ const mamaPasswordInput = document.querySelector('#mama-password');
 const mamaAuthFeedback = document.querySelector('#mama-auth-feedback');
 const mamaAuthCancelButton = document.querySelector('.mama-auth-cancel');
 const appToast = document.querySelector('#app-toast');
+const globalSearchInput = document.querySelector('#global-search-input');
+const globalSearchClearButton = document.querySelector('#global-search-clear');
+const globalSearchResults = document.querySelector('#global-search-results');
 let activeSubject = subjects.find((subject) => subject.id === 'matematyka') ?? subjects[0];
 let activeTab = 'notes';
 let activeView = 'topics';
@@ -360,6 +363,105 @@ function resolveTopic(ref) {
   const index = Number(rawIndex);
   return subject?.lessons[index] ? { subject, lesson: subject.lessons[index], index } : null;
 }
+
+function normalizeSearchText(value) {
+  return String(value ?? '').toLocaleLowerCase('pl-PL').replace(/ł/g, 'l').normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, ' ').trim();
+}
+
+function collectSearchText(value) {
+  if (typeof value === 'string' || typeof value === 'number') return [String(value)];
+  if (Array.isArray(value)) return value.flatMap(collectSearchText);
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value)
+    .filter(([key]) => !/^(lang|language|speechLanguage|.*SpeechSegments|type|level|correct|color|icon)$/i.test(key))
+    .flatMap(([, item]) => collectSearchText(item));
+}
+
+const searchableMaterials = [
+  { key: 'notes', label: 'Notatki', fields: ['summary', 'notes', 'note', 'detailedNotes', 'sections', 'definitions', 'importantFacts', 'examples', 'vocabulary', 'lessonText', 'content'] },
+  { key: 'cheatsheet', label: 'Ściąga', fields: ['cheatSheet', 'cheatsheet', 'cheatFacts'] },
+  { key: 'practice', label: 'Ćwiczenia', fields: ['reviewExercises', 'practiceExercises', 'exercises'] },
+  { key: 'review', label: 'Powtórka', fields: ['review', 'quickReview', 'importantFacts', 'definitions', 'reviewExercises'] },
+  { key: 'quiz', label: 'Sprawdzian', fields: ['quiz', 'quizQuestions', 'test', 'testQuestions', 'exam'] },
+];
+
+function searchStudyMaterials(query) {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return [];
+  const results = [];
+  for (const subject of subjects) {
+    if (normalizeSearchText(subject.name).includes(normalizedQuery)) {
+      results.push({ subject, lessonIndex: null, material: 'subject', label: 'Przedmiot', title: subject.name });
+    }
+    subject.lessons.forEach((lesson, lessonIndex) => {
+      if (normalizeSearchText(lesson.title).includes(normalizedQuery) || normalizeSearchText(lesson.topic).includes(normalizedQuery)) {
+        results.push({ subject, lessonIndex, material: 'topic', label: 'Temat', title: lesson.title });
+      }
+      for (const material of searchableMaterials) {
+        const values = material.fields.flatMap((field) => collectSearchText(lesson[field]));
+        if (values.some((value) => normalizeSearchText(value).includes(normalizedQuery))) {
+          results.push({ subject, lessonIndex, material: material.key, label: material.label, title: lesson.title });
+        }
+      }
+    });
+  }
+  return results;
+}
+
+function renderGlobalSearchResults() {
+  if (!globalSearchInput || !globalSearchResults) return;
+  const query = globalSearchInput.value.trim();
+  globalSearchClearButton.hidden = !query;
+  if (!query) {
+    globalSearchResults.innerHTML = '';
+    globalSearchResults.hidden = true;
+    return;
+  }
+  const results = searchStudyMaterials(query);
+  globalSearchResults.hidden = false;
+  globalSearchResults.innerHTML = results.length
+    ? `<div class="global-search-results-heading">Znalezione materiały <span>${results.length}</span></div><div class="global-search-result-list">${results.map((result) => `<button type="button" class="global-search-result" data-search-subject="${escapeHTML(result.subject.id)}" data-search-lesson="${result.lessonIndex ?? ''}" data-search-material="${result.material}"><span class="global-search-result-subject">${escapeHTML(result.subject.icon)} ${escapeHTML(result.subject.name)}</span><strong>${escapeHTML(result.title)}</strong><small>${escapeHTML(result.label)}</small></button>`).join('')}</div>`
+    : '<p class="global-search-empty">Nie znaleziono takiego tematu. Spróbuj wpisać inne słowo. 🔎</p>';
+}
+
+globalSearchInput?.addEventListener('input', renderGlobalSearchResults);
+globalSearchClearButton?.addEventListener('click', () => {
+  globalSearchInput.value = '';
+  renderGlobalSearchResults();
+  globalSearchInput.focus();
+});
+globalSearchResults?.addEventListener('click', (event) => {
+  const resultButton = event.target.closest('[data-search-subject]');
+  if (!resultButton) return;
+  const foundSubject = subjects.find((subject) => subject.id === resultButton.dataset.searchSubject);
+  if (!foundSubject) return;
+  activeSubject = foundSubject;
+  document.querySelector('#subject-title').textContent = activeSubject.name;
+  document.querySelector('#current-subject-crumb').textContent = activeSubject.name;
+  showDashboard = false;
+  const rawIndex = resultButton.dataset.searchLesson;
+  if (rawIndex === '') {
+    activeView = 'topics';
+  } else {
+    lessonIndex = Number(rawIndex);
+    if (!activeSubject.lessons[lessonIndex]) return;
+    quizAnswers = {};
+    quizGraded = false;
+    reviewAnswers = {};
+    reviewResults = {};
+    trackTopic();
+    appData.recentTopics = [topicRef(), ...(appData.recentTopics ?? []).filter((ref) => ref !== topicRef())].slice(0, 10);
+    persistUserData();
+    if (resultButton.dataset.searchMaterial === 'topic') activeView = 'materials';
+    else {
+      activeTab = resultButton.dataset.searchMaterial;
+      activeView = 'content';
+    }
+  }
+  renderSubjects();
+  renderPanel();
+  document.querySelector('#panel').scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+});
 
 function renderHomeDashboard() {
   if (!homeDashboard) return;
