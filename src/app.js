@@ -5,6 +5,7 @@ subjects.forEach((subject) => subject.lessons.forEach((lesson) => Object.assign(
 
 const STORAGE_KEY = 'nauka-z-mama-progress-v1';
 const APP_DATA_KEY = 'aleksander-learning-tools-v1';
+const MAMA_PASSWORD = '2580'; // Zmień hasło Trybu Mama w tym jednym miejscu.
 const subjectList = document.querySelector('#subject-list');
 const mobileSubjectSelect = document.querySelector('#mobile-subject-select');
 const panel = document.querySelector('#panel');
@@ -17,6 +18,11 @@ const resetCancelButton = document.querySelector('.reset-cancel');
 const modeDialog = document.querySelector('#mode-selection');
 const modeSwitchButton = document.querySelector('#switch-mode');
 const modeCancelButton = document.querySelector('.mode-cancel');
+const mamaAuthDialog = document.querySelector('#mama-authentication');
+const mamaAuthForm = document.querySelector('#mama-auth-form');
+const mamaPasswordInput = document.querySelector('#mama-password');
+const mamaAuthFeedback = document.querySelector('#mama-auth-feedback');
+const mamaAuthCancelButton = document.querySelector('.mama-auth-cancel');
 const appToast = document.querySelector('#app-toast');
 let activeSubject = subjects.find((subject) => subject.id === 'matematyka') ?? subjects[0];
 let activeTab = 'notes';
@@ -31,6 +37,10 @@ let oralIndex = 0;
 let oralSessionDone = 0;
 let oralSessionStartedAt = 0;
 let appData = loadAppData();
+const storedMamaModeNeedsLogin = appData.mode === 'mama';
+const hasStoredMode = Boolean(appData.mode);
+if (storedMamaModeNeedsLogin) appData.mode = 'aleksander';
+let mamaAuthenticated = false;
 let progress = appData.progress;
 let pendingResetAction = null;
 let toastTimer = null;
@@ -129,7 +139,7 @@ function resolveSavedError(itemId, subjectId = activeSubject.id, index = lessonI
 }
 
 function canManageTestData() {
-  return appData.mode === 'mama';
+  return appData.mode === 'mama' && mamaAuthenticated;
 }
 
 function questionNumberFromId(itemId) {
@@ -160,17 +170,59 @@ function recordExerciseResult(index, correct) {
   persistUserData();
 }
 
-function setMode(mode) {
-  if (!['mama', 'aleksander'].includes(mode)) return;
+function activateMode(mode) {
   appData.mode = mode;
   appData.settings = { ...(appData.settings ?? {}), lastModeChangedAt: Date.now() };
   persistUserData();
   modeSwitchButton.textContent = mode === 'mama' ? '👩 Mama' : '👦 Aleksander';
   if (modeDialog.open) modeDialog.close();
+  if (mamaAuthDialog.open) mamaAuthDialog.close();
   activeView = mode === 'mama' ? 'mother' : 'topics';
   showDashboard = mode !== 'mama';
   renderPanel();
 }
+
+function showMamaAuthentication() {
+  if (modeDialog.open) modeDialog.close();
+  mamaPasswordInput.value = '';
+  mamaPasswordInput.removeAttribute('aria-invalid');
+  mamaAuthFeedback.textContent = '';
+  if (typeof mamaAuthDialog.showModal === 'function') mamaAuthDialog.showModal();
+  else mamaAuthDialog.setAttribute('open', '');
+  mamaPasswordInput.focus();
+}
+
+function setMode(mode) {
+  if (!['mama', 'aleksander'].includes(mode)) return;
+  if (mode === 'mama') {
+    showMamaAuthentication();
+    return;
+  }
+  mamaAuthenticated = false;
+  activateMode('aleksander');
+}
+
+mamaAuthForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (mamaPasswordInput.value !== MAMA_PASSWORD) {
+    mamaPasswordInput.value = '';
+    mamaPasswordInput.setAttribute('aria-invalid', 'true');
+    mamaAuthFeedback.textContent = 'Nieprawidłowe hasło.';
+    mamaPasswordInput.focus();
+    return;
+  }
+  mamaAuthenticated = true;
+  activateMode('mama');
+});
+mamaPasswordInput.addEventListener('input', () => {
+  mamaPasswordInput.removeAttribute('aria-invalid');
+  mamaAuthFeedback.textContent = '';
+});
+mamaAuthCancelButton.addEventListener('click', () => setMode('aleksander'));
+mamaAuthDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  setMode('aleksander');
+});
 
 document.querySelectorAll('[data-mode-choice]').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.modeChoice)));
 modeSwitchButton.addEventListener('click', () => {
@@ -1091,7 +1143,9 @@ modeSwitchButton.textContent = appData.mode === 'mama' ? '👩 Mama' : '👦 Ale
 activeView = appData.mode === 'mama' ? 'mother' : 'topics';
 showDashboard = appData.mode !== 'mama';
 renderPanel();
-if (!appData.mode) {
+if (storedMamaModeNeedsLogin) {
+  showMamaAuthentication();
+} else if (!hasStoredMode) {
   modeCancelButton.hidden = true;
   if (typeof modeDialog.showModal === 'function') modeDialog.showModal();
   else modeDialog.setAttribute('open', '');

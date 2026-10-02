@@ -58,11 +58,21 @@
         <h2 id="mode-dialog-title">Kto korzysta z aplikacji?</h2>
         <p id="mode-dialog-message">Wybierz tryb. Możesz go później zmienić.</p>
         <div class="mode-choice-list">
-          <button type="button" data-mode-choice="mama">👩 Mama</button>
+          <button type="button" data-mode-choice="mama">👩 Tryb Mama</button>
           <button type="button" data-mode-choice="aleksander">👦 Aleksander</button>
         </div>
         <div class="reset-dialog-actions"><button type="button" class="mode-cancel">ZAMKNIJ</button></div>
       </div>
+    </dialog>
+    <dialog id="mama-authentication" class="reset-dialog mode-dialog" aria-labelledby="mama-auth-title" aria-describedby="mama-auth-message">
+      <form id="mama-auth-form" class="reset-dialog-form">
+        <h2 id="mama-auth-title">🔐 Tryb Mama</h2>
+        <p id="mama-auth-message">Wpisz hasło, aby wejść do trybu Mama</p>
+        <label class="mama-password-label" for="mama-password">Hasło</label>
+        <input id="mama-password" type="password" inputmode="numeric" autocomplete="current-password" aria-describedby="mama-auth-feedback" required />
+        <p id="mama-auth-feedback" class="mama-auth-feedback" aria-live="polite"></p>
+        <div class="reset-dialog-actions"><button type="button" class="mama-auth-cancel">Tryb Aleksander</button><button type="submit" class="mama-auth-submit">Wejdź</button></div>
+      </form>
     </dialog>
     <dialog id="reset-confirmation" class="reset-dialog" aria-labelledby="reset-dialog-title" aria-describedby="reset-dialog-message">
       <form method="dialog" class="reset-dialog-form">
