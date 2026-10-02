@@ -6,6 +6,7 @@ subjects.forEach((subject) => subject.lessons.forEach((lesson) => Object.assign(
 const STORAGE_KEY = 'nauka-z-mama-progress-v1';
 const APP_DATA_KEY = 'aleksander-learning-tools-v1';
 const MAMA_PASSWORD = '2580'; // Zmień hasło Trybu Mama w tym jednym miejscu.
+const PROFILE_DATA_KEYS = ['profile', 'progress', 'testResults', 'mistakes', 'errors', 'testScores', 'testHistory', 'favorites', 'recentTopics', 'motherSessions', 'learningSettings'];
 const subjectList = document.querySelector('#subject-list');
 const mobileSubjectSelect = document.querySelector('#mobile-subject-select');
 const panel = document.querySelector('#panel');
@@ -59,8 +60,12 @@ function loadProgress() {
   catch { return { done: {}, topics: {}, exerciseResults: {} }; }
 }
 
+function saveLegacyProgressMirror() {
+  if (appData.activeChildId === 'aleksander') localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+}
+
 function saveProgress() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  saveLegacyProgressMirror();
   appData.progress = progress;
   persistUserData();
   renderHomeDashboard();
@@ -70,30 +75,61 @@ function loadAppData() {
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(APP_DATA_KEY)) ?? {}; } catch { stored = {}; }
   const legacyProgress = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {}; } catch { return {}; } })();
-  const migratedProgress = { done: {}, topics: {}, exerciseResults: {}, ...(stored.progress ?? legacyProgress) };
-  const testResults = stored.testResults ?? {};
-  const testScores = stored.testScores ?? Object.fromEntries(Object.entries(testResults).map(([key, value]) => [key, typeof value === 'object' ? value.lastScore ?? value.score : value]));
-  const mistakes = stored.mistakes ?? stored.errors ?? [];
-  return {
-    schemaVersion: stored.schemaVersion ?? 1,
-    profile: { name: 'Aleksander Kozdra', ...(stored.profile ?? {}) },
-    mode: stored.mode ?? null,
-    progress: migratedProgress,
-    testResults,
-    mistakes,
-    favorites: [],
-    errors: mistakes,
-    testScores,
-    testHistory: [],
-    motherSessions: [],
-    settings: {},
-    recentTopics: [],
-    ...(stored.settings ? { settings: stored.settings } : {}),
-    ...(stored.motherSessions ? { motherSessions: stored.motherSessions } : {}),
-    ...(stored.testHistory ? { testHistory: stored.testHistory } : {}),
-    ...(stored.favorites ? { favorites: stored.favorites } : {}),
-    ...(stored.recentTopics ? { recentTopics: stored.recentTopics } : {}),
+  const hasProfileRecords = Boolean(stored.children && typeof stored.children === 'object');
+  const legacyTestResults = hasProfileRecords ? {} : stored.testResults ?? {};
+  const legacyErrors = hasProfileRecords ? [] : stored.errors ?? stored.mistakes ?? [];
+  const legacyAlexProfile = {
+    profile: { id: 'aleksander', name: 'Aleksander Kozdra', grade: '5', ...(!hasProfileRecords ? stored.profile ?? {} : {}) },
+    progress: { done: {}, topics: {}, exerciseResults: {}, ...(!hasProfileRecords ? stored.progress ?? legacyProgress : {}) },
+    testResults: legacyTestResults,
+    mistakes: legacyErrors,
+    errors: legacyErrors,
+    testScores: !hasProfileRecords ? stored.testScores ?? Object.fromEntries(Object.entries(legacyTestResults).map(([key, value]) => [key, typeof value === 'object' ? value.lastScore ?? value.score : value])) : {},
+    testHistory: !hasProfileRecords ? stored.testHistory ?? [] : [],
+    favorites: !hasProfileRecords ? stored.favorites ?? [] : [],
+    recentTopics: !hasProfileRecords ? stored.recentTopics ?? [] : [],
+    motherSessions: !hasProfileRecords ? stored.motherSessions ?? [] : [],
+    learningSettings: !hasProfileRecords ? stored.learningSettings ?? stored.settings ?? {} : {},
   };
+  const normalizeChild = (id, source, defaults) => {
+    const data = { ...defaults, ...(source ?? {}) };
+    data.profile = { ...defaults.profile, ...(source?.profile ?? {}), id };
+    data.progress = { done: {}, topics: {}, exerciseResults: {}, ...(data.progress ?? {}) };
+    data.errors = data.errors ?? data.mistakes ?? [];
+    data.mistakes = data.errors;
+    data.testResults ??= {};
+    data.testScores ??= Object.fromEntries(Object.entries(data.testResults).map(([key, value]) => [key, typeof value === 'object' ? value.lastScore ?? value.score : value]));
+    data.testHistory ??= [];
+    data.favorites ??= [];
+    data.recentTopics ??= [];
+    data.motherSessions ??= [];
+    data.learningSettings ??= {};
+    return data;
+  };
+  const children = {
+    aleksander: normalizeChild('aleksander', stored.children?.aleksander, legacyAlexProfile),
+    daughter: normalizeChild('daughter', stored.children?.daughter, {
+      profile: { id: 'daughter', name: 'Córka', grade: 'zerówka' },
+      progress: { done: {}, topics: {}, exerciseResults: {} }, testResults: {}, mistakes: [], errors: [], testScores: {},
+      testHistory: [], favorites: [], recentTopics: [], motherSessions: [], learningSettings: {},
+    }),
+  };
+  const app = {
+    schemaVersion: stored.schemaVersion ?? 2,
+    mode: stored.mode ?? null,
+    activeChildId: children[stored.activeChildId] ? stored.activeChildId : 'aleksander',
+    children,
+    settings: stored.settings ?? {},
+  };
+  PROFILE_DATA_KEYS.forEach((key) => {
+    Object.defineProperty(app, key, {
+      configurable: true,
+      enumerable: true,
+      get() { return this.children[this.activeChildId][key]; },
+      set(value) { this.children[this.activeChildId][key] = value; },
+    });
+  });
+  return app;
 }
 
 function saveAppData() {
@@ -102,7 +138,7 @@ function saveAppData() {
 }
 
 function persistUserData() {
-  appData.schemaVersion = 1;
+  appData.schemaVersion = 2;
   appData.updatedAt = Date.now();
   appData.progress = progress;
   appData.mistakes = appData.errors;
@@ -145,6 +181,13 @@ function canManageTestData() {
   return appData.mode === 'mama' && mamaAuthenticated;
 }
 
+function updateChildModeLabel() {
+  const childModeChoice = document.querySelector('[data-mode-choice="aleksander"]');
+  const childName = appData.profile.name;
+  const childIcon = appData.activeChildId === 'daughter' ? '👧' : '👦';
+  if (childModeChoice) childModeChoice.textContent = `${childIcon} ${childName}`;
+}
+
 function questionNumberFromId(itemId) {
   const match = String(itemId ?? '').match(/(?:quiz|exercise)-(\d+)/);
   return match ? Number(match[1]) + 1 : null;
@@ -155,7 +198,7 @@ function trackTopic(update = {}) {
   const previous = progress.topics[ref] ?? {};
   progress.topics[ref] = { ...previous, started: true, startedAt: previous.startedAt ?? Date.now(), lastStudiedAt: Date.now(), ...update };
   appData.progress = progress;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  saveLegacyProgressMirror();
   persistUserData();
 }
 
@@ -169,7 +212,7 @@ function recordExerciseResult(index, correct) {
   if (firstSuccessful) topic.exercisesCompleted = (topic.exercisesCompleted ?? 0) + 1;
   progress.topics[topicRef()] = topic;
   appData.progress = progress;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  saveLegacyProgressMirror();
   persistUserData();
 }
 
@@ -177,10 +220,11 @@ function activateMode(mode) {
   appData.mode = mode;
   appData.settings = { ...(appData.settings ?? {}), lastModeChangedAt: Date.now() };
   persistUserData();
-  modeSwitchButton.textContent = mode === 'mama' ? '👩 Mama' : '👦 Aleksander';
+  modeSwitchButton.textContent = mode === 'mama' ? '👩 Mama' : `${appData.activeChildId === 'daughter' ? '👧' : '👦'} ${appData.profile.name}`;
+  updateChildModeLabel();
   if (modeDialog.open) modeDialog.close();
   if (mamaAuthDialog.open) mamaAuthDialog.close();
-  activeView = mode === 'mama' ? 'mother' : 'topics';
+  activeView = mode === 'mama' ? 'mother' : childHomeView(appData.activeChildId);
   showDashboard = mode !== 'mama';
   renderPanel();
 }
@@ -292,14 +336,22 @@ function resetResultsAndProgress() {
   oralIndex = 0;
   oralSessionDone = 0;
   persistUserData();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  saveLegacyProgressMirror();
 }
 
 function clearAllUserData() {
   if (!canManageTestData()) return;
-  const { mode, profile, settings } = appData;
   progress = { done: {}, topics: {}, exerciseResults: {} };
-  appData = { schemaVersion: 1, profile, mode, settings, progress, testResults: {}, mistakes: [], testScores: {}, errors: [], testHistory: [], favorites: [], recentTopics: [], motherSessions: [] };
+  appData.progress = progress;
+  appData.testResults = {};
+  appData.mistakes = [];
+  appData.errors = appData.mistakes;
+  appData.testScores = {};
+  appData.testHistory = [];
+  appData.favorites = [];
+  appData.recentTopics = [];
+  appData.motherSessions = [];
+  appData.learningSettings = {};
   quizAnswers = {};
   quizGraded = false;
   reviewAnswers = {};
@@ -307,15 +359,76 @@ function clearAllUserData() {
   oralIndex = 0;
   oralSessionDone = 0;
   persistUserData();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  saveLegacyProgressMirror();
+}
+
+function profileSubjects(childId = appData.activeChildId) {
+  if (childId === 'aleksander') return subjects;
+  const grade = normalizeChildLevel(appData.children[childId]?.profile?.grade ?? 'zerówka');
+  return subjects.map((subject) => ({
+    ...subject,
+    lessons: subject.lessons.filter((lesson) => {
+      const levels = lesson.grades ?? lesson.levels ?? [lesson.grade ?? lesson.level].filter((value) => value !== undefined);
+      return levels.map(normalizeChildLevel).includes(grade);
+    }),
+  })).filter((subject) => subject.lessons.length);
+}
+
+function normalizeChildLevel(value) {
+  const level = normalizeSearchText(value);
+  if (['0', 'klasa 0', 'zerowka'].includes(level)) return 'zerowka';
+  return level.replace(/^klasa\s*/, '');
+}
+
+function displayChildGrade(profile) {
+  const grade = String(profile?.grade ?? '');
+  if (grade === '5') return 'Klasa 5';
+  return grade ? grade[0].toLocaleUpperCase('pl-PL') + grade.slice(1) : '';
+}
+
+function childHomeView(childId) {
+  return childId === 'daughter' && !profileSubjects(childId).length ? 'daughterWelcome' : 'topics';
+}
+
+function selectChildProfile(childId) {
+  if (!appData.children[childId] || !canManageTestData()) return;
+  appData.progress = progress;
+  appData.activeChildId = childId;
+  progress = appData.progress;
+  const availableSubjects = profileSubjects();
+  activeSubject = availableSubjects.find((subject) => subject.id === 'matematyka' && subject.lessons.length)
+    ?? availableSubjects.find((subject) => subject.lessons.length)
+    ?? subjects.find((subject) => subject.id === 'matematyka')
+    ?? subjects[0];
+  lessonIndex = 0;
+  activeTab = 'notes';
+  quizAnswers = {};
+  quizGraded = false;
+  reviewAnswers = {};
+  reviewResults = {};
+  document.querySelector('#subject-title').textContent = childId === 'daughter' ? `${appData.profile.name} · ${displayChildGrade(appData.profile)}` : activeSubject.name;
+  document.querySelector('#current-subject-crumb').textContent = appData.profile.name;
+  updateChildModeLabel();
+  activeView = 'mother';
+  showDashboard = false;
+  persistUserData();
+  renderSubjects();
+  renderPanel();
 }
 
 function renderSubjects() {
-  subjectList.innerHTML = subjects.map((subject) => `
+  const availableSubjects = profileSubjects();
+  const daughterHasNoMaterials = appData.activeChildId === 'daughter' && !availableSubjects.length;
+  subjectList.hidden = !availableSubjects.length;
+  document.querySelector('.sidebar-label').hidden = !availableSubjects.length;
+  document.querySelector('.section-heading').hidden = daughterHasNoMaterials;
+  subjectList.innerHTML = availableSubjects.map((subject) => `
     <button class="subject-link ${subject.id === activeSubject.id ? 'active' : ''}" data-subject="${subject.id}" aria-current="${subject.id === activeSubject.id ? 'page' : 'false'}">
       <span class="subject-icon">${subject.icon}</span><span>${subject.name}</span>
     </button>`).join('');
-  mobileSubjectSelect.innerHTML = '<option value="" selected disabled>Wybierz przedmiot ▼</option>' + subjects.map((subject) => `<option value="${escapeHTML(subject.id)}">${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</option>`).join('');
+  mobileSubjectSelect.innerHTML = '<option value="" selected disabled>Wybierz przedmiot ▼</option>' + availableSubjects.map((subject) => `<option value="${escapeHTML(subject.id)}">${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</option>`).join('');
+  mobileSubjectSelect.disabled = !availableSubjects.length;
+  document.querySelector('.mobile-subject-picker').hidden = daughterHasNoMaterials;
   mobileSubjectSelect.value = '';
   subjectList.querySelectorAll('[data-subject]').forEach((button) => {
     button.addEventListener('click', () => selectSubject(button.dataset.subject));
@@ -339,7 +452,9 @@ document.querySelector('#back-to-subjects')?.addEventListener('click', () => {
 });
 
 function selectSubject(id) {
-  activeSubject = subjects.find((subject) => subject.id === id) ?? subjects[0];
+  const selectedSubject = profileSubjects().find((subject) => subject.id === id);
+  if (!selectedSubject) return;
+  activeSubject = selectedSubject;
   lessonIndex = 0;
   activeView = 'topics';
   showDashboard = false;
@@ -359,7 +474,7 @@ function currentLesson() { return lessons()[lessonIndex]; }
 
 function resolveTopic(ref) {
   const [subjectId, rawIndex] = String(ref).split(':');
-  const subject = subjects.find((item) => item.id === subjectId);
+  const subject = profileSubjects().find((item) => item.id === subjectId);
   const index = Number(rawIndex);
   return subject?.lessons[index] ? { subject, lesson: subject.lessons[index], index } : null;
 }
@@ -389,7 +504,7 @@ function searchStudyMaterials(query) {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return [];
   const results = [];
-  for (const subject of subjects) {
+  for (const subject of profileSubjects()) {
     if (normalizeSearchText(subject.name).includes(normalizedQuery)) {
       results.push({ subject, lessonIndex: null, material: 'subject', label: 'Przedmiot', title: subject.name });
     }
@@ -433,7 +548,7 @@ globalSearchClearButton?.addEventListener('click', () => {
 globalSearchResults?.addEventListener('click', (event) => {
   const resultButton = event.target.closest('[data-search-subject]');
   if (!resultButton) return;
-  const foundSubject = subjects.find((subject) => subject.id === resultButton.dataset.searchSubject);
+  const foundSubject = profileSubjects().find((subject) => subject.id === resultButton.dataset.searchSubject);
   if (!foundSubject) return;
   activeSubject = foundSubject;
   document.querySelector('#subject-title').textContent = activeSubject.name;
@@ -465,7 +580,7 @@ globalSearchResults?.addEventListener('click', (event) => {
 
 function renderHomeDashboard() {
   if (!homeDashboard) return;
-  if (appData.mode === 'mama') {
+  if (appData.mode === 'mama' || appData.activeChildId === 'daughter') {
     homeDashboard.hidden = true;
     homeDashboard.innerHTML = '';
     return;
@@ -473,9 +588,9 @@ function renderHomeDashboard() {
   const favoriteCount = appData.favorites.length;
   const errorCount = appData.errors.filter((item) => !item.mastered).length;
   const todayRefs = [...new Set([...(appData.recentTopics ?? []), ...appData.favorites])].slice(0, 3);
-  const today = (todayRefs.length ? todayRefs : subjects.flatMap((subject) => subject.lessons.map((_, index) => topicRef(subject.id, index))).slice(0, 3))
+  const today = (todayRefs.length ? todayRefs : profileSubjects().flatMap((subject) => subject.lessons.map((_, index) => topicRef(subject.id, index))).slice(0, 3))
     .map(resolveTopic).filter(Boolean);
-  const subjectProgress = subjects.map((subject) => {
+  const subjectProgress = profileSubjects().map((subject) => {
     const completed = subject.lessons.filter((_, index) => progress.done[topicRef(subject.id, index)]).length;
     return `<div class="dashboard-progress-row"><span>${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</span><span>${completed}/${subject.lessons.length}</span><i><b style="width:${subject.lessons.length ? Math.round(completed / subject.lessons.length * 100) : 0}%"></b></i></div>`;
   }).join('');
@@ -869,18 +984,18 @@ function renderFavorites() {
 function renderErrors() {
   const entries = appData.errors.filter((item) => !item.mastered);
   const cards = entries.map((item) => { const found=resolveTopic(topicRef(item.subjectId,item.lessonIndex)); return `<article class="saved-error"><p>${item.questionNumber ? `<b>Pytanie ${item.questionNumber}.</b> ` : ''}${escapeHTML(item.prompt)}</p><small>${found?`${escapeHTML(found.lesson.title)} · ${escapeHTML(found.subject.name)}`:'Temat'} · ${item.attempts ?? 1} prób</small><details><summary>Pokaż odpowiedź</summary><p>Twoja odpowiedź: ${escapeHTML(item.lastAnswer)}</p><p>Poprawna odpowiedź: ${escapeHTML(item.correctAnswer ?? '')}</p><p>${escapeHTML(item.explanation ?? '')}</p></details>${canManageTestData() ? `<button type="button" data-error-mastered="${escapeHTML(item.id)}">Oznacz jako opanowane</button>` : ''}${found?`<button type="button" data-direct-topic="${found.subject.id}:${found.index}">Wróć do tematu</button>`:''}</article>`; }).join('');
-  return `${motherBackButton()}<h3>❌ ${appData.mode === 'mama' ? 'Błędy Aleksandra' : 'Powtórz moje błędy'}</h3><p>Masz ${entries.length} rzeczy do powtórzenia. Spokojnie, każda próba pomaga.</p>${cards?`<div class="personal-topic-list">${cards}</div>`:emptyState('Na razie nie ma błędów do powtórzenia.', 'Świetnie, możesz wybrać kolejny temat. 🌱')}${canManageTestData() ? '<div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="errors">🧹 Wyczyść moje błędy</button></div>' : ''}`;
+  return `${motherBackButton()}<h3>❌ ${canManageTestData() ? `Błędy: ${escapeHTML(appData.profile.name)}` : 'Powtórz moje błędy'}</h3><p>Masz ${entries.length} rzeczy do powtórzenia. Spokojnie, każda próba pomaga.</p>${cards?`<div class="personal-topic-list">${cards}</div>`:emptyState('Na razie nie ma błędów do powtórzenia.', 'Świetnie, możesz wybrać kolejny temat. 🌱')}${canManageTestData() ? '<div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="errors">🧹 Wyczyść moje błędy</button></div>' : ''}`;
 }
 
 function renderFiveMinutes() {
   const errors = appData.errors.filter((item) => !item.mastered).slice(0, 5);
-  const entries = errors.length ? errors.map((item) => ({ prompt:item.prompt, answer:item.correctAnswer, explanation:item.explanation, ref:topicRef(item.subjectId,item.lessonIndex) })) : subjects.flatMap((subject) => subject.lessons.flatMap((lesson,index) => quizQuestions(lesson).slice(0,1).map((question) => ({prompt:question.question,answer:question.type==='open'?(question.acceptedAnswers??[]).join(' lub '):question.answers?.[question.correct],explanation:question.explanation,ref:topicRef(subject.id,index)})))).slice(0,5);
-  const flashFacts = subjects.flatMap((subject) => subject.lessons.flatMap((lesson,index) => (lesson.importantFacts ?? []).slice(0,1).map((fact) => ({fact, title:lesson.title, subject:subject.name, ref:topicRef(subject.id,index)})))).slice(0,3);
+  const entries = errors.length ? errors.map((item) => ({ prompt:item.prompt, answer:item.correctAnswer, explanation:item.explanation, ref:topicRef(item.subjectId,item.lessonIndex) })) : profileSubjects().flatMap((subject) => subject.lessons.flatMap((lesson,index) => quizQuestions(lesson).slice(0,1).map((question) => ({prompt:question.question,answer:question.type==='open'?(question.acceptedAnswers??[]).join(' lub '):question.answers?.[question.correct],explanation:question.explanation,ref:topicRef(subject.id,index)})))).slice(0,5);
+  const flashFacts = profileSubjects().flatMap((subject) => subject.lessons.flatMap((lesson,index) => (lesson.importantFacts ?? []).slice(0,1).map((fact) => ({fact, title:lesson.title, subject:subject.name, ref:topicRef(subject.id,index)})))).slice(0,3);
   return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>⚡ Mam 5 minut</h3><p>Krótka, spokojna sesja. Zacznij od rzeczy, które warto powtórzyć.</p><section class="review-key-facts"><h4>Najważniejsze wskazówki</h4>${flashFacts.map((item)=>`<p>${escapeHTML(item.fact)} <small>(${escapeHTML(item.title)} · ${escapeHTML(item.subject)})</small></p>`).join('')}</section><section class="five-minute-questions"><h4>${errors.length?'Pytania wymagające powtórki':'Krótkie pytania'}</h4>${entries.length?entries.map((item,index)=>`<article><p>${index+1}. ${escapeHTML(item.prompt)}</p><details><summary>Pokaż odpowiedź</summary><p>${escapeHTML(item.answer??'')}${item.explanation?` — ${escapeHTML(item.explanation)}`:''}</p></details><button type="button" data-direct-topic="${escapeHTML(item.ref)}">Otwórz temat</button></article>`).join(''):emptyState('Dodajemy krótkie pytania', 'Skorzystaj z listy tematów i wybierz materiał do nauki.', '📝')}</section>`;
 }
 
 function renderProgress() {
-  const detailRows = subjects.flatMap((subject) => subject.lessons.map((lesson, index) => {
+  const detailRows = profileSubjects().flatMap((subject) => subject.lessons.map((lesson, index) => {
     const ref = topicRef(subject.id, index);
     const item = progress.topics[ref] ?? {};
     const score = appData.testResults?.[ref] ?? appData.testScores?.[ref];
@@ -891,7 +1006,7 @@ function renderProgress() {
     return `<article class="topic-progress-card"><div class="topic-progress-heading"><strong>${escapeHTML(subject.name)} · ${escapeHTML(lesson.title)}</strong><span>${percent}%</span></div><div class="subject-progress-track"><b style="width:${percent}%"></b></div><p>${item.started ? 'Rozpoczęty' : 'Jeszcze nieotwarty'} · ćwiczenia: ${completedExercises}/${totalExercises}${score !== undefined ? ` · ostatni sprawdzian: ${typeof score === 'object' ? `${score.correct}/${score.total}` : `${score}%`}` : ' · sprawdzian: brak wyniku'}</p>${typeof score === 'object' && score.bestScore !== undefined ? `<small>Najlepszy wynik: ${score.bestScore}%</small>` : ''}<p>Do powtórki: ${errorNumbers.length ? `pytania ${[...new Set(errorNumbers)].join(', ')}` : 'brak zapisanych błędów'}</p><small>Ostatnia nauka: ${item.lastStudiedAt ? new Date(item.lastStudiedAt).toLocaleString('pl-PL') : 'brak danych'}</small></article>`;
   })).join('');
   const resultRows = (appData.testHistory ?? []).slice().reverse().slice(0, 12).map((result) => `<article class="result-history-row"><strong>${escapeHTML(result.subjectName)} · ${escapeHTML(result.lessonTitle)}</strong><span>${result.correct}/${result.total} poprawnych (${result.score}%)</span><small>${new Date(result.completedAt).toLocaleString('pl-PL')} · błędne pytania: ${(result.wrongNumbers ?? []).length ? result.wrongNumbers.join(', ') : 'brak'}</small></article>`).join('');
-  return `${motherBackButton()}<h3>📊 ${canManageTestData() ? 'Postępy Aleksandra' : 'Moje postępy'}</h3><div class="progress-topic-list">${detailRows}</div>${canManageTestData() ? `<section class="mother-report-section"><h4>📝 Wyniki sprawdzianów</h4>${resultRows || '<p>Nie ma jeszcze zapisanych sprawdzianów.</p>'}</section><div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="results">♻️ Wyzeruj moje wyniki</button><button type="button" class="data-reset-button quiet" data-reset="all">🧹 Wyczyść wszystkie dane testowe</button></div>` : ''}`;
+  return `${motherBackButton()}<h3>📊 ${canManageTestData() ? `Postępy: ${escapeHTML(appData.profile.name)}` : 'Moje postępy'}</h3><div class="progress-topic-list">${detailRows}</div>${canManageTestData() ? `<section class="mother-report-section"><h4>📝 Wyniki sprawdzianów</h4>${resultRows || '<p>Nie ma jeszcze zapisanych sprawdzianów.</p>'}</section><div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="results">♻️ Wyzeruj wyniki dziecka</button><button type="button" class="data-reset-button quiet" data-reset="all">🧹 Wyczyść wszystkie dane dziecka</button></div>` : ''}`;
 }
 
 function motherBackButton() {
@@ -900,7 +1015,9 @@ function motherBackButton() {
 
 function renderMotherPanel() {
   const visited = [...new Set(appData.recentTopics ?? [])].map(resolveTopic).filter(Boolean);
-  const allTopics = subjects.flatMap((subject) => subject.lessons.map((lesson, index) => ({ subject, lesson, index })));
+  const childProfile = appData.profile;
+  const profileCards = Object.values(appData.children).map((child) => `<button type="button" class="child-profile-card ${child.profile.id === appData.activeChildId ? 'active' : ''}" data-select-child="${escapeHTML(child.profile.id)}" aria-pressed="${child.profile.id === appData.activeChildId}"><strong>${child.profile.id === 'aleksander' ? '👦' : '👧'} ${escapeHTML(child.profile.name)}</strong><span>${escapeHTML(displayChildGrade(child.profile))}</span></button>`).join('');
+  const allTopics = profileSubjects().flatMap((subject) => subject.lessons.map((lesson, index) => ({ subject, lesson, index })));
   const stats = (appData.testHistory ?? []).reduce((total, result) => ({ correct: total.correct + result.correct, wrong: total.wrong + result.wrong }), { correct: 0, wrong: 0 });
   const commonErrors = Object.values(appData.errors.filter((item) => !item.mastered).reduce((counts, item) => {
     const key = `${item.subjectId}:${item.lessonIndex}:${item.prompt}`;
@@ -921,34 +1038,38 @@ function renderMotherPanel() {
   const favoriteEntries = appData.favorites.map(resolveTopic).filter(Boolean);
   const oralChoices = allTopics.map(({ subject, lesson, index }) => `<button type="button" data-start-mother-oral="${subject.id}:${index}">🎯 ${escapeHTML(subject.name)} · ${escapeHTML(lesson.title)}</button>`).join('');
   const completedSessions = (appData.motherSessions ?? []).slice().reverse().slice(0, 8).map((session) => `<li>${escapeHTML(session.subjectName)} · ${escapeHTML(session.lessonTitle)} — ${session.questions} pytań, ${new Date(session.completedAt).toLocaleString('pl-PL')}</li>`).join('');
-  return `<section class="mother-dashboard"><div class="mother-panel-heading"><span>👩 PANEL MAMY</span><p>Wspieraj naukę Aleksandra spokojnie, krok po kroku.</p></div><div class="mother-summary-grid"><article><strong>${visited.length}</strong><span>ostatnio otwieranych tematów</span></article><article><strong>${(appData.testHistory ?? []).length}</strong><span>ukończonych sprawdzianów</span></article><article><strong>${stats.correct}</strong><span>poprawnych odpowiedzi</span></article><article><strong>${stats.wrong}</strong><span>błędnych odpowiedzi</span></article></div>
-  <details open class="mother-report-section"><summary>📊 Postępy Aleksandra i tematy</summary><div class="mother-topic-list">${topicRows || '<p>Dodajemy tematy do nauki.</p>'}</div></details>
+  return `<section class="mother-dashboard"><div class="mother-panel-heading"><span>👩 PANEL MAMY</span><p>Wybierz dziecko, aby zobaczyć jego osobiste materiały i postępy.</p></div><section class="mother-report-section child-profile-picker"><h3>👨‍👩‍👧‍👦 Dzieci</h3><div class="child-profile-list">${profileCards}</div></section><div class="mother-summary-grid"><article><strong>${visited.length}</strong><span>ostatnio otwieranych tematów</span></article><article><strong>${(appData.testHistory ?? []).length}</strong><span>ukończonych sprawdzianów</span></article><article><strong>${stats.correct}</strong><span>poprawnych odpowiedzi</span></article><article><strong>${stats.wrong}</strong><span>błędnych odpowiedzi</span></article></div>
+  <details open class="mother-report-section"><summary>📊 Postępy ${escapeHTML(childProfile.name)} i tematy</summary><div class="mother-topic-list">${topicRows || `<p>${childProfile.id === 'daughter' ? 'Materiały i postępy dla Córki pojawią się tutaj.' : 'Dodajemy tematy do nauki.'}</p>`}</div></details>
   <details class="mother-report-section"><summary>📝 Wyniki sprawdzianów</summary><ul class="mother-result-list">${resultRows || '<li>Nie ma jeszcze zakończonych sprawdzianów.</li>'}</ul></details>
-  <details class="mother-report-section"><summary>❌ Moje błędy (${errorList.length})</summary>${errorList.length ? `<div class="personal-topic-list">${errorList.slice(0, 10).map((item) => { const found = resolveTopic(topicRef(item.subjectId, item.lessonIndex)); return `<article class="saved-error"><p>${item.questionNumber ? `Pytanie ${item.questionNumber}. ` : ''}${escapeHTML(item.prompt)}</p><small>${found ? `${escapeHTML(found.subject.name)} · ${escapeHTML(found.lesson.title)}` : ''}</small><details><summary>Pokaż odpowiedź</summary><p>Odpowiedź Aleksandra: ${escapeHTML(item.lastAnswer)}</p><p>Poprawna odpowiedź: ${escapeHTML(item.correctAnswer ?? '')}</p><p>${escapeHTML(item.explanation ?? '')}</p></details><button type="button" data-error-mastered="${escapeHTML(item.id)}">Oznacz jako opanowane</button>${found ? `<button type="button" data-direct-topic="${found.subject.id}:${found.index}">Wróć do tematu</button>` : ''}</article>`; }).join('')}</div>` : '<p>Nie ma zapisanych błędów.</p>'}</details>
+  <details class="mother-report-section"><summary>❌ Błędy ${escapeHTML(childProfile.name)} (${errorList.length})</summary>${errorList.length ? `<div class="personal-topic-list">${errorList.slice(0, 10).map((item) => { const found = resolveTopic(topicRef(item.subjectId, item.lessonIndex)); return `<article class="saved-error"><p>${item.questionNumber ? `Pytanie ${item.questionNumber}. ` : ''}${escapeHTML(item.prompt)}</p><small>${found ? `${escapeHTML(found.subject.name)} · ${escapeHTML(found.lesson.title)}` : ''}</small><details><summary>Pokaż odpowiedź</summary><p>Odpowiedź ${escapeHTML(childProfile.name)}: ${escapeHTML(item.lastAnswer)}</p><p>Poprawna odpowiedź: ${escapeHTML(item.correctAnswer ?? '')}</p><p>${escapeHTML(item.explanation ?? '')}</p></details><button type="button" data-error-mastered="${escapeHTML(item.id)}">Oznacz jako opanowane</button>${found ? `<button type="button" data-direct-topic="${found.subject.id}:${found.index}">Wróć do tematu</button>` : ''}</article>`; }).join('')}</div>` : '<p>Nie ma zapisanych błędów.</p>'}</details>
   <details class="mother-report-section"><summary>🔄 Tematy do powtórzenia</summary>${renderTopicLinks([...new Map(errorList.map((item) => { const found = resolveTopic(topicRef(item.subjectId, item.lessonIndex)); return found ? [topicRef(item.subjectId, item.lessonIndex), found] : []; }).filter(([key]) => key).map(([key, value]) => [key, value])).values()], 'Nie ma tematów do pilnej powtórki.')}</details>
   <details class="mother-report-section"><summary>📌 Najczęściej powtarzające się błędy</summary>${commonErrors.length ? `<ol>${commonErrors.map((item) => `<li>${escapeHTML(item.prompt)} <small>(${item.count} prób)</small></li>`).join('')}</ol>` : '<p>Brak powtarzających się błędów.</p>'}</details>
-  <details class="mother-report-section"><summary>🎯 Nauka z mamą — wybierz temat</summary><p>Wybierz temat, a potem pytaj i odpowiadajcie na zmianę.</p><div class="mother-topic-choices">${oralChoices || '<p>Wybierz przedmiot i dodaj temat.</p>'}</div><h4>Zakończone sesje</h4><ul class="mother-result-list">${completedSessions || '<li>Nie ma jeszcze zakończonych sesji.</li>'}</ul></details>
+  <details class="mother-report-section"><summary>🎯 Nauka z mamą — ${escapeHTML(childProfile.name)}</summary><p>Wybierz temat, a potem pytaj i odpowiadajcie na zmianę.</p><div class="mother-topic-choices">${oralChoices || '<p>Brak materiałów przypisanych do tego poziomu.</p>'}</div><h4>Zakończone sesje</h4><ul class="mother-result-list">${completedSessions || '<li>Nie ma jeszcze zakończonych sesji.</li>'}</ul></details>
   <details class="mother-report-section"><summary>⭐ Moje do nauki (${favoriteEntries.length})</summary>${renderTopicLinks(favoriteEntries, 'Dodaj gwiazdkę przy temacie, do którego chcecie wrócić.')}</details>
-  <details class="mother-report-section"><summary>📚 Przedmioty</summary><div class="mother-topic-choices">${subjects.map((subject) => `<button type="button" data-mother-subject="${subject.id}">${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</button>`).join('')}</div></details>
+  <details class="mother-report-section"><summary>📚 Przedmioty</summary><div class="mother-topic-choices">${profileSubjects().map((subject) => `<button type="button" data-mother-subject="${subject.id}">${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</button>`).join('') || '<p>Brak przedmiotów z materiałami dla tego poziomu.</p>'}</div></details>
   <div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="errors">🧹 Wyczyść moje błędy</button><button type="button" class="data-reset-button" data-reset="results">♻️ Wyzeruj moje wyniki</button><button type="button" class="data-reset-button quiet" data-reset="all">🧹 Wyczyść wszystkie dane testowe</button></div></section>`;
 }
 
 function renderToday() {
   const refs=[...(appData.recentTopics??[]),...appData.favorites,...appData.errors.filter((item)=>!item.mastered).map((item)=>topicRef(item.subjectId,item.lessonIndex))];
   const unique=[...new Set(refs)].map(resolveTopic).filter(Boolean).slice(0,5);
-  const entries=unique.length?unique:subjects.flatMap((subject)=>subject.lessons.map((lesson,index)=>({subject,lesson,index}))).slice(0,5);
+  const entries=unique.length?unique:profileSubjects().flatMap((subject)=>subject.lessons.map((lesson,index)=>({subject,lesson,index}))).slice(0,5);
   return `${motherBackButton()}<h3>🏠 Dzisiaj się uczę</h3><p>Wybierz jedną małą rzecz na dziś. 🌱</p>${renderTopicLinks(entries,'Wybierz temat i zrób mały krok.')}`;
 }
 
 function renderMotherStudySelection() {
-  const entries = subjects.flatMap((subject) => subject.lessons.map((lesson, index) => ({ subject, lesson, index })));
+  const entries = profileSubjects().flatMap((subject) => subject.lessons.map((lesson, index) => ({ subject, lesson, index })));
   const choices = entries.map(({ subject, lesson, index }) => `<button type="button" data-start-mother-oral="${subject.id}:${index}">🎯 ${escapeHTML(subject.name)} · ${escapeHTML(lesson.title)}</button>`).join('');
-  return `<h3>🎯 Nauka z mamą</h3><p>Wybierz temat. Mama zadaje pytanie, Aleksander odpowiada, a potem przechodzicie dalej.</p><div class="mother-topic-choices">${choices || emptyState('Brak tematów', 'Wybierz przedmiot i dodaj materiały.', '📚')}</div>`;
+  return `<h3>🎯 Nauka z mamą</h3><p>Wybierz temat dla ${escapeHTML(appData.profile.name)}. Mama zadaje pytanie, dziecko odpowiada, a potem przechodzicie dalej.</p><div class="mother-topic-choices">${choices || emptyState('Brak tematów', 'Brak materiałów przypisanych do tego poziomu.', '📚')}</div>`;
+}
+
+function renderDaughterWelcome() {
+  return `<section class="daughter-welcome"><h3>👧 Witaj!</h3><p>Materiały dla Ciebie będą tutaj dodawane krok po kroku. 🌸</p><span>${escapeHTML(displayChildGrade(appData.profile))}</span></section>`;
 }
 
 function renderPanel() {
   stopSpeechPlayback();
-  const screens = { mother: renderMotherPanel, motherStudy: renderMotherStudySelection, topics: renderTopicList, materials: renderMaterialMenu, content: renderMaterialContent, today: renderToday, favorites: renderFavorites, errors: renderErrors, fiveMinutes: renderFiveMinutes, progress: renderProgress };
+  const screens = { mother: renderMotherPanel, motherStudy: renderMotherStudySelection, daughterWelcome: renderDaughterWelcome, topics: renderTopicList, materials: renderMaterialMenu, content: renderMaterialContent, today: renderToday, favorites: renderFavorites, errors: renderErrors, fiveMinutes: renderFiveMinutes, progress: renderProgress };
   panel.innerHTML = (screens[activeView] ?? renderTopicList)();
   renderHomeDashboard();
   panel.querySelectorAll('[data-open-topic]').forEach((button) => button.addEventListener('click', () => {
@@ -999,7 +1120,7 @@ function renderPanel() {
   }));
   panel.querySelectorAll('[data-direct-topic]').forEach((button) => button.addEventListener('click', () => {
     const [subjectId, rawIndex] = button.dataset.directTopic.split(':');
-    const foundSubject = subjects.find((subject) => subject.id === subjectId);
+    const foundSubject = profileSubjects().find((subject) => subject.id === subjectId);
     if (!foundSubject?.lessons[Number(rawIndex)]) return;
     activeSubject = foundSubject;
     lessonIndex = Number(rawIndex);
@@ -1016,9 +1137,12 @@ function renderPanel() {
   panel.querySelectorAll('[data-mother-subject]').forEach((button) => button.addEventListener('click', () => {
     selectSubject(button.dataset.motherSubject);
   }));
+  panel.querySelectorAll('[data-select-child]').forEach((button) => button.addEventListener('click', () => {
+    selectChildProfile(button.dataset.selectChild);
+  }));
   panel.querySelectorAll('[data-start-mother-oral]').forEach((button) => button.addEventListener('click', () => {
     const [subjectId, rawIndex] = button.dataset.startMotherOral.split(':');
-    const found = subjects.find((subject) => subject.id === subjectId);
+    const found = profileSubjects().find((subject) => subject.id === subjectId);
     if (!found?.lessons[Number(rawIndex)]) return;
     activeSubject = found;
     lessonIndex = Number(rawIndex);
@@ -1058,8 +1182,8 @@ function renderPanel() {
         successMessage: 'Gotowe! Wyniki i postępy zostały wyzerowane.',
       },
       all: {
-        title: 'Wyzerować wyniki Aleksandra?',
-        message: 'Czy na pewno chcesz wyzerować wyniki Aleksandra? Usunięte zostaną tylko zapisane postępy, wyniki, błędy i historia korzystania. Materiały edukacyjne pozostaną bez zmian.',
+        title: `Wyzerować dane: ${appData.profile.name}?`,
+        message: `Czy na pewno chcesz wyzerować dane użytkownika profilu ${appData.profile.name}? Usunięte zostaną tylko zapisane postępy, wyniki, błędy i historia korzystania. Materiały edukacyjne pozostaną bez zmian.`,
         confirmLabel: 'WYZERUJ',
         action: clearAllUserData,
         successMessage: 'Gotowe! Dane użytkownika zostały wyczyszczone.',
@@ -1238,7 +1362,7 @@ function gradeQuiz() {
     if (progress.topics[topicRef()]) progress.topics[topicRef()].completedTestCount = (progress.topics[topicRef()].completedTestCount ?? 0) + 1;
   }
   persistUserData();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  saveLegacyProgressMirror();
   renderHomeDashboard();
   const score = panel.querySelector('#quiz-score');
   score.innerHTML = answeredCount < questions.length
@@ -1256,9 +1380,14 @@ function gradeQuiz() {
 }
 
 renderSubjects();
-modeSwitchButton.textContent = appData.mode === 'mama' ? '👩 Mama' : '👦 Aleksander';
-activeView = appData.mode === 'mama' ? 'mother' : 'topics';
-showDashboard = appData.mode !== 'mama';
+modeSwitchButton.textContent = appData.mode === 'mama' ? '👩 Mama' : `${appData.activeChildId === 'daughter' ? '👧' : '👦'} ${appData.profile.name}`;
+updateChildModeLabel();
+activeView = appData.mode === 'mama' ? 'mother' : childHomeView(appData.activeChildId);
+showDashboard = appData.mode !== 'mama' && appData.activeChildId !== 'daughter';
+if (appData.activeChildId === 'daughter') {
+  document.querySelector('#subject-title').textContent = `${appData.profile.name} · ${displayChildGrade(appData.profile)}`;
+  document.querySelector('#current-subject-crumb').textContent = appData.profile.name;
+}
 renderPanel();
 if (storedMamaModeNeedsLogin) {
   showMamaAuthentication();
