@@ -26,6 +26,8 @@ public class MainActivity extends BridgeActivity {
             ? new ServerPath(ServerPath.PathType.ASSET_PATH, "public")
             : new ServerPath(ServerPath.PathType.BASE_PATH, directory.getAbsolutePath()));
         registerPlugin(AndroidUpdatesPlugin.class);
+        registerPlugin(AndroidSpeechPlugin.class);
+        registerPlugin(AndroidPrintPlugin.class);
         bridgeBuilder.addWebViewListener(new WebViewListener() {
             @Override public void onPageLoaded(WebView webView) {
                 // Retire only the old PWA worker/cache in the native origin. Never clear WebView data.
@@ -38,6 +40,8 @@ public class MainActivity extends BridgeActivity {
             }
         });
         super.load();
+        TtsDiagnostics.record("MainActivity: AndroidSpeechPlugin registered");
+        TtsDiagnostics.record("WEB SOURCE: " + (directory == null ? "bundled assets" : directory.getName()));
         if (!releases.state.trial().isEmpty()) handler.postDelayed(startupTimeout, 30_000);
         connectivity = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
         networkCallback = new ConnectivityManager.NetworkCallback() {

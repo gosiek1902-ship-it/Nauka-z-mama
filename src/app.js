@@ -54,6 +54,9 @@ let speechRunId = 0;
 let speechPaused = false;
 let speechVoicesWaitCleanup = null;
 let speechVoiceWaitedLanguages = new Set();
+let speechActiveUtterance = null;
+let speechStartTimer = null;
+let nativeSpeechPending = false;
 
 function loadProgress() {
   try { return { done: {}, topics: {}, exerciseResults: {}, ...(JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {}) }; }
@@ -717,8 +720,13 @@ function collectSpeechFragments(root) {
     }
     if (node.nodeType !== 1) return;
     const tag = node.tagName;
+    // Choice controls contain educational answers, but their labels/icons are UI.
+    if (tag === 'BUTTON') {
+      node.querySelectorAll?.('[data-speech-text]').forEach((content) => visit(content, inheritedLanguage));
+      return;
+    }
     if (SPEECH_SKIP_TAGS.has(tag)) return;
-    if (tag === 'DETAILS' && !node.open) return;
+    if (tag === 'DETAILS' && !node.open && !node.hasAttribute?.('data-speech-answer')) return;
     if (node.getAttribute?.('aria-hidden') === 'true') return;
     if ([...SPEECH_SKIP_CLASSES].some((name) => node.classList?.contains(name))) return;
     const explicitLanguage = node.getAttribute?.('lang') || inheritedLanguage;
@@ -772,11 +780,83 @@ function waitForSpeechVoice(language, runId, onReady) {
   timer = setTimeout(finish, 1200);
 }
 
+function nativeSpeechPlugin() {
+  const capacitor = window.Capacitor;
+  return capacitor?.isNativePlatform?.() && capacitor.isPluginAvailable?.('AndroidSpeech')
+    ? capacitor.Plugins.AndroidSpeech : null;
+}
+
+function printMaterial() {
+  if (!window.Capacitor?.isNativePlatform?.()) { window.print(); return; }
+  const printer = window.Capacitor.Plugins?.AndroidPrint;
+  if (!printer?.print) {
+    speechFailure('Brak połączenia z natywnym drukowaniem. Ta wersja Androida nie udostępnia pluginu AndroidPrint.');
+    return;
+  }
+  const body = panel.querySelector('.learning-content-body')?.cloneNode(true);
+  if (!body) { speechFailure('Brak otwartego materiału do wydrukowania.'); return; }
+  body.querySelectorAll('button').forEach(button => {
+    const answer = button.querySelector('[data-speech-text]');
+    if (answer) button.replaceWith(answer.cloneNode(true));
+    else button.remove();
+  });
+  body.querySelectorAll('script, style, input, textarea, select, [data-speech-diagnostic]').forEach(node => node.remove());
+  body.querySelectorAll('details').forEach(node => { node.open = true; });
+  const title = currentLesson()?.title ?? 'Nauka z mamą';
+  const css = [...document.styleSheets].map(sheet => {
+    try { return [...sheet.cssRules].map(rule => rule.cssText).join('\n'); } catch { return ''; }
+  }).join('\n');
+  const html = `<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>${escapeHTML(title)}</title><style>${css}\nbody{padding:16px} .learning-content-body{display:block}</style></head><body><h2>${escapeHTML(title)}</h2>${body.outerHTML}</body></html>`;
+  printer.print({ title, html }).catch(error => speechFailure(error?.message ?? 'Nie udało się uruchomić drukowania.'));
+}
+
+function speechFailure(message) {
+  stopSpeechPlayback();
+  const text = message || 'Nie udało się uruchomić czytania. Sprawdź ustawienia zamiany tekstu na mowę w telefonie.';
+  let diagnostic = panel.querySelector('[data-speech-diagnostic]');
+  if (!diagnostic) {
+    diagnostic = document.createElement('p');
+    diagnostic.setAttribute('data-speech-diagnostic', '');
+    diagnostic.setAttribute('role', 'alert');
+    panel.querySelector('.learning-tools')?.after(diagnostic);
+  }
+  diagnostic.textContent = text;
+}
+
+// Bound input for native TTS and browser engines without changing the declared language.
+function chunkSpeechFragment(fragment) {
+  let remaining = cleanSpeechText(fragment.text);
+  const chunks = [];
+  while (remaining.length > 1500) {
+    let boundary = remaining.lastIndexOf(' ', 1500);
+    if (boundary < 1) boundary = 1500;
+    if (/[\uD800-\uDBFF]/.test(remaining[boundary - 1])) boundary -= 1;
+    chunks.push({ text: remaining.slice(0, boundary), lang: fragment.lang });
+    remaining = remaining.slice(boundary).trim();
+  }
+  if (remaining) chunks.push({ text: remaining, lang: fragment.lang });
+  return chunks;
+}
+
 function speakNextFragment(runId = speechRunId) {
   if (runId !== speechRunId || speechPaused || speechQueueIndex >= speechQueue.length) return;
   const fragment = speechQueue[speechQueueIndex];
   const text = cleanSpeechText(fragment.text);
-  if (!text) return speakNextFragment(runId);
+  if (!text) { speechQueueIndex += 1; return speakNextFragment(runId); }
+  const native = nativeSpeechPlugin();
+  if (native) {
+    if (nativeSpeechPending) return;
+    nativeSpeechPending = true;
+    native.speak({ text, lang: fragment.lang }).then(() => {
+      if (runId !== speechRunId) return;
+      nativeSpeechPending = false;
+      speechQueueIndex += 1;
+      speakNextFragment(runId);
+    }).catch((error) => {
+      if (runId === speechRunId) speechFailure(error?.message);
+    });
+    return;
+  }
   const baseLanguage = normalizeSpeechLanguage(fragment.lang).slice(0, 2);
   const voices = window.speechSynthesis.getVoices();
   const voice = getVoiceForLanguage(fragment.lang, voices);
@@ -786,15 +866,32 @@ function speakNextFragment(runId = speechRunId) {
     waitForSpeechVoice(fragment.lang, runId, () => speakNextFragment(runId));
     return;
   }
+  if (!voice) {
+    speechFailure(`Brak dostępnego głosu dla języka ${fragment.lang}. Sprawdź ustawienia zamiany tekstu na mowę.`);
+    return;
+  }
   speechQueueIndex += 1;
   const utterance = new window.SpeechSynthesisUtterance(text);
   utterance.lang = fragment.lang;
   utterance.voice = voice;
-  utterance.onend = () => speakNextFragment(runId);
-  utterance.onerror = (event) => {
-    if (event.error !== 'canceled' && event.error !== 'interrupted') speakNextFragment(runId);
+  utterance.volume = 1;
+  speechActiveUtterance = utterance;
+  const clearStart = () => { clearTimeout(speechStartTimer); speechStartTimer = null; };
+  utterance.onstart = clearStart;
+  utterance.onend = () => {
+    if (runId !== speechRunId) return;
+    clearStart(); speechActiveUtterance = null; speakNextFragment(runId);
   };
-  window.speechSynthesis.speak(utterance);
+  utterance.onerror = (event) => {
+    if (runId !== speechRunId) return;
+    clearStart();
+    speechFailure(`Nie udało się uruchomić czytania (${event.error || 'błąd silnika mowy'}). Sprawdź ustawienia zamiany tekstu na mowę.`);
+  };
+  speechStartTimer = setTimeout(() => {
+    if (runId === speechRunId && !speechPaused) speechFailure();
+  }, 15_000);
+  try { window.speechSynthesis.resume(); window.speechSynthesis.speak(utterance); }
+  catch { speechFailure(); }
 }
 
 function stopSpeechPlayback() {
@@ -805,25 +902,50 @@ function stopSpeechPlayback() {
   speechQueueIndex = 0;
   speechPaused = false;
   speechVoiceWaitedLanguages = new Set();
+  clearTimeout(speechStartTimer);
+  speechStartTimer = null;
+  speechActiveUtterance = null;
+  nativeSpeechPending = false;
+  nativeSpeechPlugin()?.stop().catch(() => {});
   window.speechSynthesis?.cancel();
 }
 
 function startSpeechPlayback() {
-  if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return;
   stopSpeechPlayback();
+  panel.querySelector('[data-speech-diagnostic]')?.remove();
+  if (window.Capacitor?.isNativePlatform?.() && !nativeSpeechPlugin()) {
+    speechFailure('Brak połączenia z natywnym czytaniem. Ta wersja Androida nie udostępnia pluginu AndroidSpeech.');
+    return;
+  }
+  if (!nativeSpeechPlugin() && (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance)) {
+    speechFailure(); return;
+  }
   const body = panel.querySelector('.learning-content-body');
-  speechQueue = collectSpeechFragments([body]);
+  speechQueue = collectSpeechFragments([body]).flatMap(chunkSpeechFragment);
   speechQueueIndex = 0;
+  if (!speechQueue.length) { speechFailure('Brak tekstu do przeczytania w otwartym materiale.'); return; }
   speakNextFragment(speechRunId);
 }
 
 function pauseSpeechPlayback() {
+  if (nativeSpeechPlugin()) {
+    speechPaused = true;
+    speechRunId += 1;
+    nativeSpeechPending = false;
+    nativeSpeechPlugin().stop().catch((error) => speechFailure(error?.message));
+    return;
+  }
   if (!('speechSynthesis' in window)) return;
   speechPaused = true;
   window.speechSynthesis.pause();
 }
 
 function resumeSpeechPlayback() {
+  if (nativeSpeechPlugin()) {
+    speechPaused = false;
+    speakNextFragment(speechRunId);
+    return;
+  }
   if (!('speechSynthesis' in window)) return;
   speechPaused = false;
   window.speechSynthesis.resume();
@@ -892,7 +1014,7 @@ function renderQuiz() {
       const isOpen = question.type === 'open';
       const response = quizAnswers[questionIndex] ?? '';
       const answers = isOpen ? `<div class="open-answer-block"><label class="open-answer-row"><span>Twoja odpowiedź</span><input type="text" data-open-answer="${questionIndex}" value="${escapeHTML(response)}" placeholder="Wpisz odpowiedź" autocomplete="off" /></label><button type="button" class="open-answer-check" data-check-open="${questionIndex}">Sprawdź</button></div>`
-        : `<div class="answer-list">${question.answers.map((answer, answerIndex) => `<button type="button" class="answer-option ${response === answerIndex ? 'selected' : ''}" data-choice="${questionIndex}" data-value="${answerIndex}" ${quizGraded ? 'disabled' : ''}>${String.fromCharCode(65 + answerIndex)}. &nbsp;${escapeHTML(answer)}</button>`).join('')}</div>`;
+        : `<div class="answer-list">${question.answers.map((answer, answerIndex) => `<button type="button" class="answer-option ${response === answerIndex ? 'selected' : ''}" data-choice="${questionIndex}" data-value="${answerIndex}" ${quizGraded ? 'disabled' : ''}>${String.fromCharCode(65 + answerIndex)}. &nbsp;<span data-speech-text>${renderSpeechText(question.answerOptionSpeechSegments?.[answerIndex] ?? answer, question.answerLanguage ?? defaultSpeechLanguage())}</span></button>`).join('')}</div>`;
       const level = question.level ?? ['Łatwe', 'Średnie', 'Trudniejsze'][questionIndex % 3];
       const promptSpeech = question.speechSegments ?? [{ text: question.question, lang: question.promptLanguage ?? defaultSpeechLanguage() }];
       return `<article class="quiz-question-card" id="quiz-question-${questionIndex}"><p class="quiz-question"><span class="question-number">${questionIndex + 1}.</span> ${renderSpeechText(promptSpeech)} <small class="question-level">${escapeHTML(level)}</small></p>${answers}<div id="quiz-feedback-${questionIndex}" class="feedback" role="status"></div></article>`;
@@ -922,10 +1044,10 @@ function renderReview(isPractice = false) {
       ? 'Brawo! To dobra odpowiedź! 🌟'
       : `Spróbuj jeszcze raz. ${renderSpeechText(exercise.hint ?? '')} ${isChoice ? `Odpowiedź: ${escapeHTML(exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz'))}.` : exercise.acceptedAnswers?.length ? `Odpowiedź: ${escapeHTML(exercise.acceptedAnswers.join(' lub '))}.` : ''}`;
     const field = isChoice
-      ? `<div class="review-choice-list">${(exercise.options ?? ['Prawda', 'Fałsz']).map((option, optionIndex) => `<button type="button" class="review-choice ${reviewAnswers[key] === optionIndex ? 'selected' : ''}" data-review-choice="${index}" data-review-value="${optionIndex}">${escapeHTML(option)}</button>`).join('')}</div><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button>`
+      ? `<div class="review-choice-list">${(exercise.options ?? ['Prawda', 'Fałsz']).map((option, optionIndex) => `<button type="button" class="review-choice ${reviewAnswers[key] === optionIndex ? 'selected' : ''}" data-review-choice="${index}" data-review-value="${optionIndex}"><span data-speech-text>${renderSpeechText(exercise.optionSpeechSegments?.[optionIndex] ?? option, exercise.optionLanguage ?? defaultSpeechLanguage())}</span></button>`).join('')}</div><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button>`
       : `<div class="review-answer-controls"><input id="review-answer-${index}" type="text" data-review-answer="${index}" value="${escapeHTML(reviewAnswers[key] ?? '')}" placeholder="${exercise.type === 'open' ? 'Odpowiedz własnymi słowami' : 'Wpisz odpowiedź'}" autocomplete="off" /><button type="button" class="review-check-answer" data-check-review="${index}">Sprawdź</button></div>`;
     const knownAnswer = isChoice ? exercise.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : exercise.acceptedAnswers?.join(' lub ');
-    const answerReveal = knownAnswer ? `<details class="review-answer-reveal"><summary>▶️ Pokaż odpowiedź</summary><p>${renderSpeechText(exercise.answerSpeechSegments ?? knownAnswer)}</p></details>` : '';
+    const answerReveal = knownAnswer ? `<details class="review-answer-reveal" data-speech-answer><summary>▶️ Pokaż odpowiedź</summary><p>${renderSpeechText(exercise.answerSpeechSegments ?? knownAnswer)}</p></details>` : '';
     const promptSpeech = exercise.speechSegments ?? [{ text: exercise.prompt, lang: exercise.promptLanguage ?? defaultSpeechLanguage() }];
     return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${renderSpeechText(promptSpeech)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div>${answerReveal}</div>`;
   }).join('')}</div>` : '';
@@ -980,7 +1102,7 @@ function renderOral() {
   if (oralIndex >= questions.length) return `<div class="oral-session-end"><h3>Gotowe! 🌱</h3><p>Dzisiaj przećwiczyliście ${oralSessionDone} pytań.</p><p>Do powtórzenia zostało ${appData.errors.filter((item) => !item.mastered).length}.</p><button type="button" data-reset-oral>Jeszcze raz</button></div>`;
   const item = questions[oralIndex];
   const promptSpeech = item.speechSegments ?? [{ text: item.prompt, lang: item.promptLanguage ?? defaultSpeechLanguage() }];
-  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${renderSpeechText(promptSpeech)}</h4>${item.answer ? `<details class="oral-answer"><summary>Pokaż przykładową odpowiedź</summary><p>${renderSpeechText(item.answerSpeechSegments ?? item.answer)} ${renderSpeechText(item.explanationSpeechSegments ?? item.explanation ?? '')}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
+  return `<section class="oral-session"><p class="oral-counter">Pytanie ${oralIndex + 1} z ${questions.length}</p><h4>${renderSpeechText(promptSpeech)}</h4>${item.answer ? `<details class="oral-answer" data-speech-answer><summary>Pokaż przykładową odpowiedź</summary><p>${renderSpeechText(item.answerSpeechSegments ?? item.answer)} ${renderSpeechText(item.explanationSpeechSegments ?? item.explanation ?? '')}</p></details>` : ''}<p class="gentle-message">Mama pyta, Aleksander odpowiada — spokojnie, bez pośpiechu.</p><div class="oral-actions"><button type="button" data-oral-result="know">✅ UMIEM</button><button type="button" data-oral-result="repeat">🔁 MUSZĘ POWTÓRZYĆ</button></div></section>`;
 }
 
 function renderTopicLinks(entries, emptyText) {
@@ -1203,7 +1325,7 @@ function renderPanel() {
     };
     if (config[resetType]) askResetConfirmation(config[resetType]);
   }));
-  panel.querySelector('[data-print-material]')?.addEventListener('click', () => window.print());
+  panel.querySelector('[data-print-material]')?.addEventListener('click', printMaterial);
   panel.querySelector('[data-read-notes]')?.addEventListener('click', startSpeechPlayback);
   panel.querySelector('[data-pause-reading]')?.addEventListener('click', pauseSpeechPlayback);
   panel.querySelector('[data-resume-reading]')?.addEventListener('click', resumeSpeechPlayback);
