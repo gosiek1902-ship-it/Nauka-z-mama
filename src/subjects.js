@@ -7,7 +7,7 @@ const subjectCatalog = [
   { id: 'angielski', name: 'Język angielski', speechLanguage: 'en-GB', icon: '🔤', color: '#7da8d8', lessons: [
     {
       title: 'Step 2 – Warm up your brain! Powtórzenie nazw przedmiotów w klasie, produktów spożywczych, ubrań, miejsc w mieście',
-      speechLanguage: 'en-GB',
+      speechLanguage: 'pl-PL',
       titleSpeechSegments: [
         { text: 'Step 2 – Warm up your brain!', lang: 'en-GB' },
         { text: 'Powtórzenie nazw przedmiotów w klasie, produktów spożywczych, ubrań, miejsc w mieście', lang: 'pl-PL' },

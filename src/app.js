@@ -698,9 +698,22 @@ function renderReview(isPractice = false) {
     const promptSpeech = exercise.speechSegments ?? [{ text: exercise.prompt, lang: exercise.promptLanguage ?? defaultSpeechLanguage() }];
     return `<div class="review-exercise"><label ${isChoice ? '' : `for="review-answer-${index}"`}>${exercise.type === 'translate' ? '🌐 ' : ''}${renderSpeechText(promptSpeech)}</label>${field}<div class="feedback ${result === false ? 'wrong' : ''}" role="status">${feedback}</div>${answerReveal}</div>`;
   }).join('')}</div>` : '';
-  const quickFacts = [...(lesson.importantFacts ?? []), ...(lesson.definitions ?? []).map((definition) => `${definition.term}: ${definition.meaning}`)];
+  const quickFacts = [
+    ...(lesson.importantFacts ?? []).map((text, index) => ({
+      text,
+      speechSegments: lesson.importantFactsSpeechSegments?.[index],
+    })),
+    ...(lesson.definitions ?? []).map((definition) => ({
+      text: `${definition.term}: ${definition.meaning}`,
+      speechSegments: definition.quickFactSpeechSegments ?? [
+        ...(definition.termSpeechSegments ?? [{ text: definition.term, lang: defaultSpeechLanguage() }]),
+        { text: ': ', lang: 'pl-PL' },
+        ...(definition.meaningSpeechSegments ?? [{ text: definition.meaning, lang: 'pl-PL' }]),
+      ],
+    })),
+  ];
   return `<div class="panel-head"><div><h3>${renderSpeechText(lesson.titleSpeechSegments ?? lesson.title)}</h3><p class="panel-subtitle" lang="pl-PL">${isPractice ? 'Poćwicz bez presji. Każda próba pomaga.' : 'Krótkie pytania, pojęcia i zasady do utrwalenia.'}</p></div><span class="topic-badge">${isPractice ? '✏️ Ćwiczenia' : '🔁 Powtórka'}</span></div>
-    ${!isPractice && quickFacts.length ? `<section class="review-key-facts"><h4 lang="pl-PL">Najważniejsze do powtórzenia</h4>${quickFacts.map((fact) => `<p>${renderSpeechText(fact)}</p>`).join('')}</section>` : ''}${exercises || emptyState('Ćwiczenia pojawią się po dodaniu materiału', 'W tym temacie nie ma jeszcze ćwiczeń do sprawdzenia.', '🌱')}
+    ${!isPractice && quickFacts.length ? `<section class="review-key-facts"><h4 lang="pl-PL">Najważniejsze do powtórzenia</h4>${quickFacts.map((fact) => `<p>${renderSpeechText(fact.speechSegments ?? fact.text)}</p>`).join('')}</section>` : ''}${exercises || emptyState('Ćwiczenia pojawią się po dodaniu materiału', 'W tym temacie nie ma jeszcze ćwiczeń do sprawdzenia.', '🌱')}
     <label class="review-row"><span><strong>Oznacz temat jako powtórzony</strong><small>${escapeHTML(lesson.title)}</small></span><input class="review-check" type="checkbox" data-review="${lessonIndex}" ${progress.done[lessonKey(lessonIndex)] ? 'checked' : ''} aria-label="Oznacz ${escapeHTML(lesson.title)} jako powtórzony" /></label>
     <div class="review-progress">🌟 Powtórzone tematy: ${doneCount} z ${items.length}</div><p class="gentle-message">Co jeszcze trzeba powtórzyć?</p>`;
 }
