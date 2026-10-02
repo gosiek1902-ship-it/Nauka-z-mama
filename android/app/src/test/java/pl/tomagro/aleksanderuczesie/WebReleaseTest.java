@@ -36,6 +36,16 @@ public class WebReleaseTest {
         assertEquals(VERSION, release.version);
         assertEquals(9, release.files.size());
     }
+    @Test public void revisionMustMatchCompleteRuntimeMetadata() throws Exception {
+        JSONObject data = manifest().put("releaseRevision", 200);
+        WebRelease release = parse(data);
+        assertEquals(200, release.revision);
+        release.verifyRuntimeVersion(data.toString().getBytes(StandardCharsets.UTF_8));
+        data.put("releaseRevision", 100);
+        try { release.verifyRuntimeVersion(data.toString().getBytes(StandardCharsets.UTF_8)); fail(); }
+        catch (IOException expected) { }
+        assertEquals(0, parse(manifest()).revision);
+    }
     @Test public void refusesWrongPackageProtocolNativeApiAndDataSchema() throws Exception {
         rejected(manifest().put("appId", "another.application"));
         rejected(manifest().put("schemaVersion", 2));

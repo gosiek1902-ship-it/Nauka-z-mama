@@ -54,6 +54,33 @@ tasks.configureEach { task ->
     if (task.name == 'preReleaseBuild') task.dependsOn('verifyCompatibleReleaseKey')
 }
 
+// Check both the standard Capacitor copy and the actual configured assets.
+// No inputs/outputs are declared: this guard must run even on an incremental build.
+tasks.register('verifyBundledWebAssets') {
+    doLast {
+        def current = rootProject.file('../src/app.js')
+        def required = ['AndroidSpeech', 'AndroidPrint', 'nativeSpeechPlugin', 'printMaterial']
+        def digest = { byte[] bytes -> java.security.MessageDigest.getInstance('SHA-256').digest(bytes).encodeHex().toString() }
+        def expected = digest(current.bytes)
+        def bundledFiles = [file('src/main/assets/public/src/app.js')]
+        android.sourceSets.main.assets.srcDirs.each { directory ->
+            bundledFiles.add(new File(directory, 'public/src/app.js'))
+        }
+        bundledFiles.unique().each { bundled ->
+            if (!bundled.exists()) throw new GradleException("Missing bundled app.js: ${bundled}. Run npm run android:sync before building an APK.")
+            def bytes = bundled.bytes
+            def text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8)
+            if (digest(bytes) != expected || !required.every { text.contains(it) }) {
+                throw new GradleException("Stale bundled app.js: ${bundled}. Run npm run android:sync and refresh any overridden assets directory. APK build stopped.")
+            }
+            logger.lifecycle("Verified current Android TTS/print app.js: ${bundled} (SHA-256 ${expected})")
+        }
+    }
+}
+tasks.configureEach { task ->
+    if (task.name == 'preBuild') task.dependsOn('verifyBundledWebAssets')
+}
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'

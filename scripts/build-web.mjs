@@ -2,6 +2,7 @@ import { cp, mkdir, rm, readFile, writeFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const webDir = join(root, 'www');
@@ -27,13 +28,19 @@ async function listFiles(directory, prefix = '') {
 }
 const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 const compatibility = JSON.parse(await readFile(join(root, 'app-release.json'), 'utf8'));
+// Stable for the same checkout, available in shallow Netlify clones as well.
+// Equal revisions are never considered newer, even if their hashes differ.
+const git = process.platform === 'win32' ? 'C:/Program Files/Git/cmd/git.exe' : 'git';
+const releaseRevision = Number(process.env.WEB_RELEASE_REVISION
+  ?? execFileSync(git, ['show', '-s', '--format=%ct', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim());
+if (!Number.isSafeInteger(releaseRevision) || releaseRevision <= 0) throw new Error('Missing valid publication revision');
 // The version changes with file contents, without manually bumping lesson versions.
 const sourceFiles = await listFiles(webDir);
 const fingerprint = [];
 for (const path of sourceFiles) fingerprint.push([path, sha256(await readFile(join(webDir, path)))]);
 const generatorSha256 = sha256(await readFile(fileURLToPath(import.meta.url)));
-const version = sha256(JSON.stringify({ compatibility, generatorSha256, fingerprint }));
-const runtimeVersion = { ...compatibility, version };
+const version = sha256(JSON.stringify({ compatibility, releaseRevision, generatorSha256, fingerprint }));
+const runtimeVersion = { ...compatibility, releaseRevision, version };
 await writeFile(join(webDir, 'app-version.json'), JSON.stringify(runtimeVersion, null, 2));
 const worker = await readFile(join(webDir, 'service-worker.js'), 'utf8');
 await writeFile(join(webDir, 'service-worker.js'), worker.replace("'aleksander-app-shell-v10'", `'aleksander-app-shell-${version}'`));

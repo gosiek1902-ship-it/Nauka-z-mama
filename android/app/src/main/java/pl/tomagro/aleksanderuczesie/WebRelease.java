@@ -18,6 +18,7 @@ final class WebRelease {
         Asset(String path, String sha256, int size) { this.path = path; this.sha256 = sha256; this.size = size; }
     }
     final String version, basePath;
+    final long revision;
     final byte[] manifest;
     final List<Asset> files = new ArrayList<>();
 
@@ -32,6 +33,8 @@ final class WebRelease {
                 && data.getInt("nativeApi") == UpdatePolicy.NATIVE_API
                 && data.getInt("dataSchema") == UpdatePolicy.DATA_SCHEMA, "Incompatible release");
             version = data.getString("version");
+            revision = data.optLong("releaseRevision", 0);
+            UpdatePolicy.require(revision >= 0, "Invalid publication revision");
             basePath = data.getString("basePath");
             UpdatePolicy.require(UpdatePolicy.hash(version), "Invalid version");
             UpdatePolicy.require(basePath.equals("/updates/releases/" + version + "/"), "Invalid release path");
@@ -59,6 +62,7 @@ final class WebRelease {
         try {
             JSONObject runtime = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
             UpdatePolicy.require(version.equals(runtime.getString("version"))
+                && revision == runtime.optLong("releaseRevision", 0)
                 && UpdatePolicy.APP_ID.equals(runtime.getString("appId"))
                 && runtime.getInt("schemaVersion") == 1
                 && runtime.getString("transport").equals("raw-files-v1")

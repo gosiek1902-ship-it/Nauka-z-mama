@@ -20,6 +20,10 @@ final class UpdateState {
     synchronized String active() { return active; }
     synchronized String pending() { return pending; }
     synchronized String trial() { return trial; }
+    synchronized void resetForNewApk() {
+        // Release metadata only: preserve downloaded files and all WebView/user data.
+        save("", "", "", "", "");
+    }
     synchronized boolean shouldDownload(String version, String bundled) {
         return !version.equals(active) && !version.equals(pending) && !version.equals(rejected)
             && !(active.isEmpty() && version.equals(bundled));

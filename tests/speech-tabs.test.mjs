@@ -63,6 +63,14 @@ test('clicking Read in all six rendered tabs uses the Notes handler and sends ed
     for(const tab of ['notes','cheatsheet','practice','review','quiz','oral']) {
       await page.evaluate(({tab,lesson})=>window.speechTabTest.open(tab,lesson),{tab,lesson});
       assert.equal(await page.locator('[data-read-notes]').evaluate(button=>button.readHandler===window.speechTabTest.startSpeechPlayback),true,`${tab}: same handler as Notes`);
+      for (const [phrase,lang] of [['English instruction','en-GB'],['Deutsche Aufgabe','de-DE']]) {
+        await page.evaluate(()=>{window.spoken=[];});
+        await page.getByRole('button',{name:`Przeczytaj: ${phrase}`,exact:true}).first().click();
+        await page.waitForFunction(()=>window.spoken.length>0);
+        assert.deepEqual(await page.evaluate(()=>window.spoken),[{text:phrase,lang}],`${tab}: word icon reads only its own phrase`);
+      }
+      assert.equal(await page.getByRole('button',{name:'Przeczytaj: Polskie polecenie',exact:true}).count(),0,`${tab}: Polish has no icon`);
+      await page.evaluate(()=>{window.spoken=[];});
       await page.locator('.learning-content-body input[type=text]').evaluateAll(inputs=>inputs.forEach(input=>input.value='ODPOWIEDZ_UZYTKOWNIKA_NIE_CZYTAJ'));
       await page.locator('[data-read-notes]').click();
       await page.waitForFunction(()=>window.spoken.some(f=>f.text.includes('Deutsche Aufgabe')));
@@ -85,5 +93,19 @@ test('clicking Read in all six rendered tabs uses the Notes handler and sends ed
       assert.ok(calls.some(call=>call.pluginId==='AndroidSpeech'&&call.methodName==='speak'&&call.options.text.length>0),`${tab}: native bridge TTS`);
       assert.ok(calls.some(call=>call.pluginId==='AndroidPrint'&&call.methodName==='print'&&call.options.html.length>0),`${tab}: native bridge print`);
     }
+    await page.evaluate(lesson=>window.speechTabTest.open('notes',lesson),{
+      ...lesson, summarySpeechSegments:[{text:'jabłko',lang:'pl-PL'},{text:'apple',lang:'en-GB'},{text:'der Tisch',lang:'de-DE'},
+        {text:'These five words belong together.',lang:'en-GB'}],
+    });
+    for(const [text,lang] of [['apple','en-GB'],['der Tisch','de-DE'],['five','en-GB']]) {
+      await page.evaluate(()=>{window.spoken=[];});
+      await page.getByRole('button',{name:`Przeczytaj: ${text}`,exact:true}).click();
+      await page.waitForFunction(()=>window.spoken.length>0);
+      assert.deepEqual(await page.evaluate(()=>window.spoken),[{text,lang}]);
+    }
+    assert.equal(await page.getByRole('button',{name:'Przeczytaj: jabłko',exact:true}).count(),0);
+    await page.evaluate(()=>{window.spoken=[];});
+    await page.locator('[data-read-notes]').click();
+    await page.waitForFunction(()=>window.spoken.some(f=>f.text.includes('These five words belong together.')));
   } finally {await browser.close();}
 });

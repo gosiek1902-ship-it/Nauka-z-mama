@@ -730,6 +730,10 @@ function collectSpeechFragments(root) {
     if (node.getAttribute?.('aria-hidden') === 'true') return;
     if ([...SPEECH_SKIP_CLASSES].some((name) => node.classList?.contains(name))) return;
     const explicitLanguage = node.getAttribute?.('lang') || inheritedLanguage;
+    if (node.hasAttribute?.('data-speech-original')) {
+      append(node.getAttribute('data-speech-original'), explicitLanguage || fallbackLanguage);
+      return;
+    }
     if (SPEECH_BLOCK_TAGS.has(tag) && fragments.length) append('', explicitLanguage || fallbackLanguage);
     for (const child of node.childNodes ?? []) visit(child, explicitLanguage);
   };
@@ -925,6 +929,69 @@ function startSpeechPlayback() {
   speechQueueIndex = 0;
   if (!speechQueue.length) { speechFailure('Brak tekstu do przeczytania w otwartym materiale.'); return; }
   speakNextFragment(speechRunId);
+}
+
+function speakForeignWord(text, language) {
+  // Only explicit foreign lang values are accepted; reuse the existing playback queue.
+  if (!/^(en|de)(-|$)/i.test(language)) return;
+  stopSpeechPlayback();
+  panel.querySelector('[data-speech-diagnostic]')?.remove();
+  if (window.Capacitor?.isNativePlatform?.() && !nativeSpeechPlugin()) {
+    speechFailure('Brak połączenia z natywnym czytaniem.'); return;
+  }
+  if (!nativeSpeechPlugin() && (!window.speechSynthesis || !window.SpeechSynthesisUtterance)) {
+    speechFailure(); return;
+  }
+  speechQueue = chunkSpeechFragment({ text, lang: normalizeSpeechLanguage(language) });
+  speechQueueIndex = 0;
+  speakNextFragment(speechRunId);
+}
+
+function addForeignWordButtons() {
+  const body = panel.querySelector('.learning-content-body');
+  if (!body) return;
+  const wordPattern = /[\p{L}\p{M}]+(?:['’\-][\p{L}\p{M}]+)*/gu;
+  body.querySelectorAll('[lang]').forEach(element => {
+    const language = element.getAttribute('lang');
+    if (!/^(en|de)(-|$)/i.test(language) || element.querySelector('[lang]')) return;
+    if (element.closest('input, textarea, select, script, style, summary, [aria-hidden="true"]')) return;
+    if ([...SPEECH_SKIP_CLASSES].some(name => element.closest(`.${name}`))) return;
+    const text = cleanSpeechText(element.textContent).trim();
+    const words = text.match(wordPattern) ?? [];
+    if (!words.length) return;
+    const makeButton = phrase => {
+      const button = document.createElement('button');
+      button.type = 'button'; button.textContent = '🔊';
+      button.setAttribute('data-read-word', '');
+      button.setAttribute('aria-label', `Przeczytaj: ${phrase}`);
+      button.title = `Przeczytaj: ${phrase}`;
+      button.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;min-width:32px;min-height:36px;padding:2px;margin:0 2px;font-size:14px;vertical-align:middle';
+      button.addEventListener('click', event => {
+        event.preventDefault(); event.stopPropagation();
+        speakForeignWord(phrase, language);
+      });
+      return button;
+    };
+    // Short, explicitly marked phrases (e.g. der Tisch) keep one shared icon.
+    if (words.length <= 4 && text.length <= 60) {
+      const choice = element.closest('button');
+      if (choice && !element.closest('[data-speech-text]')) return;
+      (choice ?? element).after(makeButton(text));
+      return;
+    }
+    // Never nest interactive controls inside answer buttons.
+    if (element.closest('button') || element.children.length) return;
+    const original = element.textContent;
+    element.setAttribute('data-speech-original', original);
+    const content = document.createDocumentFragment();
+    let offset = 0;
+    for (const match of original.matchAll(wordPattern)) {
+      content.append(document.createTextNode(original.slice(offset, match.index + match[0].length)), makeButton(match[0]));
+      offset = match.index + match[0].length;
+    }
+    content.append(document.createTextNode(original.slice(offset)));
+    element.replaceChildren(content);
+  });
 }
 
 function pauseSpeechPlayback() {
@@ -1205,6 +1272,7 @@ function renderPanel() {
   stopSpeechPlayback();
   const screens = { mother: renderMotherPanel, motherStudy: renderMotherStudySelection, daughterWelcome: renderDaughterWelcome, topics: renderTopicList, materials: renderMaterialMenu, content: renderMaterialContent, today: renderToday, favorites: renderFavorites, errors: renderErrors, fiveMinutes: renderFiveMinutes, progress: renderProgress };
   panel.innerHTML = (screens[activeView] ?? renderTopicList)();
+  addForeignWordButtons();
   renderHomeDashboard();
   panel.querySelectorAll('[data-open-topic]').forEach((button) => button.addEventListener('click', () => {
     lessonIndex = Number(button.dataset.openTopic);

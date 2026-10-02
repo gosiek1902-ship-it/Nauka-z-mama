@@ -22,6 +22,7 @@ test('published release is complete, versioned, compatible, and identical to web
   assert.equal(release.nativeApi, 1);
   assert.equal(release.transport, 'raw-files-v1');
   assert.equal(release.dataSchema, 2);
+  assert.ok(Number.isSafeInteger(release.releaseRevision) && release.releaseRevision > 0);
   assert.equal(release.basePath, `/updates/releases/${release.version}/`);
   assert.ok(release.files.length <= 128);
   assert.equal(new Set(release.files.map((f) => f.path)).size, release.files.length);
@@ -61,7 +62,8 @@ test('adding a material automatically changes the release and PWA version withou
     }
     const materials = await read('src/subjects.js');
     await writeFile(resolve(fixture, 'src/subjects.js'), Buffer.concat([materials, Buffer.from('\n// new material publication fixture\n')]));
-    execFileSync(process.execPath, ['scripts/build-web.mjs'], { cwd: fixture });
+    execFileSync(process.execPath, ['scripts/build-web.mjs'], { cwd: fixture,
+      env: { ...process.env, WEB_RELEASE_REVISION: String(release.releaseRevision + 1) } });
     const next = JSON.parse(await readFile(resolve(fixture, 'www/updates/latest.json')));
     assert.notEqual(next.version, release.version);
     assert.ok((await readFile(resolve(fixture, 'www/service-worker.js'), 'utf8')).includes(`aleksander-app-shell-${next.version}`));

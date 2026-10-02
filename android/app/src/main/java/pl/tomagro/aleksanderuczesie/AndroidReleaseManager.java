@@ -21,6 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class AndroidReleaseManager {
     private final File root;
     private final String bundledVersion;
+    private final long bundledRevision;
+    private final boolean newApk;
     final UpdateState state;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final AtomicBoolean checking = new AtomicBoolean();
@@ -31,25 +33,48 @@ final class AndroidReleaseManager {
     AndroidReleaseManager(Context context) {
         root = new File(context.getFilesDir(), "web-releases");
         SharedPreferences prefs = context.getSharedPreferences("android-web-releases-v1", Context.MODE_PRIVATE);
+        String version = "";
+        long revision = 0;
+        try (InputStream stream = context.getAssets().open("public/app-version.json")) {
+            JSONObject metadata = new JSONObject(new String(readBounded(stream, UpdatePolicy.MAX_MANIFEST), StandardCharsets.UTF_8));
+            version = metadata.getString("version");
+            revision = metadata.optLong("releaseRevision", 0);
+        } catch (Exception error) { Log.w("AndroidUpdates", "Bundled version metadata unavailable", error); }
+        bundledVersion = version;
+        bundledRevision = revision;
+        long installationTime;
+        try { installationTime = context.getPackageManager().getPackageInfo(context.getPackageName(), 0).lastUpdateTime; }
+        catch (Exception error) { installationTime = -1; }
+        final String installation = installationTime + ":" + bundledVersion;
+        newApk = ReleaseStartupPolicy.newApk(prefs.getString("apk-installation", ""), installation);
         state = new UpdateState((active, pending, trial, previous, rejected) -> {
             // One synchronous atomic preferences commit, before exposing new release files.
             boolean saved = prefs.edit().putString("active", active).putString("pending", pending)
-                .putString("trial", trial).putString("previous", previous).putString("rejected", rejected).commit();
+                .putString("trial", trial).putString("previous", previous).putString("rejected", rejected)
+                .putString("apk-installation", installation).commit();
             if (!saved) throw new IllegalStateException("Release pointers could not be persisted");
         }, prefs.getString("active", ""), prefs.getString("pending", ""), prefs.getString("trial", ""),
             prefs.getString("previous", ""), prefs.getString("rejected", ""));
-        String version = "";
-        try (InputStream stream = context.getAssets().open("public/app-version.json")) {
-            version = new JSONObject(new String(readBounded(stream, UpdatePolicy.MAX_MANIFEST), StandardCharsets.UTF_8)).getString("version");
-        } catch (Exception error) { Log.w("AndroidUpdates", "Bundled version metadata unavailable", error); }
-        bundledVersion = version;
     }
 
     File prepareStartup() {
+        if (newApk) {
+            try { ReleaseStartupPolicy.startBundled(true, state); }
+            catch (IllegalStateException error) {
+                // A failed metadata write must still never expose an old release on this launch.
+                Log.w("AndroidUpdates", "Cannot persist APK baseline; using bundled assets", error);
+            }
+            Log.i("AndroidUpdates", "New APK installation: starting bundled assets " + bundledVersion);
+            return null;
+        }
         state.recover();
         String pending = state.pending();
         if (!pending.isEmpty()) {
-            try { verify(directory(pending), pending); state.beginTrial(); }
+            try {
+                WebRelease candidate = verify(directory(pending), pending);
+                UpdatePolicy.require(ReleaseStartupPolicy.newer(candidate.revision, bundledRevision, activeRevision()), "Pending release is not newer");
+                state.beginTrial();
+            }
             catch (IOException error) { state.rejectPending(); Log.w("AndroidUpdates", "Pending release rejected", error); }
             catch (IllegalStateException error) { Log.w("AndroidUpdates", "Cannot persist trial; retaining active release", error); }
         }
@@ -61,7 +86,8 @@ final class AndroidReleaseManager {
         if (active.isEmpty()) return null;
         try {
             File directory = directory(active);
-            verify(directory, active);
+            WebRelease release = verify(directory, active);
+            UpdatePolicy.require(ReleaseStartupPolicy.mayRun(release.revision, bundledRevision), "Local release is older than APK");
             return directory;
         } catch (IOException error) {
             // A damaged installed web release must not strand the application offline.
@@ -81,6 +107,7 @@ final class AndroidReleaseManager {
             File temporary = null;
             try {
                 WebRelease release = new WebRelease(download("/updates/latest.json", UpdatePolicy.MAX_MANIFEST));
+                if (!ReleaseStartupPolicy.newer(release.revision, bundledRevision, activeRevision())) return;
                 if (!state.shouldDownload(release.version, bundledVersion)) return;
                 UpdatePolicy.require(root.isDirectory() || root.mkdirs(), "Cannot create release storage");
                 File destination = directory(release.version);
@@ -133,7 +160,13 @@ final class AndroidReleaseManager {
         return new File(root, version);
     }
 
-    private static void verify(File directory, String version) throws IOException {
+    private long activeRevision() {
+        if (state.active().isEmpty()) return bundledRevision;
+        try { return verify(directory(state.active()), state.active()).revision; }
+        catch (IOException error) { return bundledRevision; }
+    }
+
+    private static WebRelease verify(File directory, String version) throws IOException {
         WebRelease release;
         try (InputStream stream = new FileInputStream(new File(directory, "release.json"))) {
             release = new WebRelease(readBounded(stream, UpdatePolicy.MAX_MANIFEST));
@@ -147,6 +180,7 @@ final class AndroidReleaseManager {
             UpdatePolicy.require(UpdatePolicy.digest(bytes).equals(asset.sha256), "Corrupt local asset");
             if (asset.path.equals("app-version.json")) release.verifyRuntimeVersion(bytes);
         }
+        return release;
     }
 
     private static byte[] download(String path, int limit) throws IOException {
