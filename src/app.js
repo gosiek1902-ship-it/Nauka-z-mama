@@ -14,6 +14,9 @@ const resetDialogTitle = document.querySelector('#reset-dialog-title');
 const resetDialogMessage = document.querySelector('#reset-dialog-message');
 const resetConfirmButton = document.querySelector('.reset-confirm');
 const resetCancelButton = document.querySelector('.reset-cancel');
+const modeDialog = document.querySelector('#mode-selection');
+const modeSwitchButton = document.querySelector('#switch-mode');
+const modeCancelButton = document.querySelector('.mode-cancel');
 const appToast = document.querySelector('#app-toast');
 let activeSubject = subjects.find((subject) => subject.id === 'matematyka') ?? subjects[0];
 let activeTab = 'notes';
@@ -26,8 +29,9 @@ let reviewAnswers = {};
 let reviewResults = {};
 let oralIndex = 0;
 let oralSessionDone = 0;
-let progress = loadProgress();
+let oralSessionStartedAt = 0;
 let appData = loadAppData();
+let progress = appData.progress;
 let pendingResetAction = null;
 let toastTimer = null;
 let speechQueue = [];
@@ -38,23 +42,58 @@ let speechVoicesWaitCleanup = null;
 let speechVoiceWaitedLanguages = new Set();
 
 function loadProgress() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? { done: {} }; }
-  catch { return { done: {} }; }
+  try { return { done: {}, topics: {}, exerciseResults: {}, ...(JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {}) }; }
+  catch { return { done: {}, topics: {}, exerciseResults: {} }; }
 }
 
 function saveProgress() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  appData.progress = progress;
+  persistUserData();
   renderHomeDashboard();
 }
 
 function loadAppData() {
-  try { return { favorites: [], errors: [], testScores: {}, ...(JSON.parse(localStorage.getItem(APP_DATA_KEY)) ?? {}) }; }
-  catch { return { favorites: [], errors: [], testScores: {} }; }
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem(APP_DATA_KEY)) ?? {}; } catch { stored = {}; }
+  const legacyProgress = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {}; } catch { return {}; } })();
+  const migratedProgress = { done: {}, topics: {}, exerciseResults: {}, ...(stored.progress ?? legacyProgress) };
+  const testResults = stored.testResults ?? {};
+  const testScores = stored.testScores ?? Object.fromEntries(Object.entries(testResults).map(([key, value]) => [key, typeof value === 'object' ? value.lastScore ?? value.score : value]));
+  const mistakes = stored.mistakes ?? stored.errors ?? [];
+  return {
+    schemaVersion: stored.schemaVersion ?? 1,
+    profile: { name: 'Aleksander Kozdra', ...(stored.profile ?? {}) },
+    mode: stored.mode ?? null,
+    progress: migratedProgress,
+    testResults,
+    mistakes,
+    favorites: [],
+    errors: mistakes,
+    testScores,
+    testHistory: [],
+    motherSessions: [],
+    settings: {},
+    recentTopics: [],
+    ...(stored.settings ? { settings: stored.settings } : {}),
+    ...(stored.motherSessions ? { motherSessions: stored.motherSessions } : {}),
+    ...(stored.testHistory ? { testHistory: stored.testHistory } : {}),
+    ...(stored.favorites ? { favorites: stored.favorites } : {}),
+    ...(stored.recentTopics ? { recentTopics: stored.recentTopics } : {}),
+  };
 }
 
 function saveAppData() {
-  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+  persistUserData();
   renderHomeDashboard();
+}
+
+function persistUserData() {
+  appData.schemaVersion = 1;
+  appData.updatedAt = Date.now();
+  appData.progress = progress;
+  appData.mistakes = appData.errors;
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
 }
 
 function topicRef(subjectId = activeSubject.id, index = lessonIndex) { return `${subjectId}:${index}`; }
@@ -71,20 +110,78 @@ function saveError({ subjectId = activeSubject.id, index = lessonIndex, itemId, 
   const id = `${topicRef(subjectId, index)}:${itemId}`;
   const existing = appData.errors.find((item) => item.id === id);
   if (existing) {
+    const answerChanged = existing.lastAnswer !== String(answer ?? '');
     existing.lastAnswer = String(answer ?? '');
-    existing.attempts = (existing.attempts ?? 1) + 1;
+    if (answerChanged) existing.attempts = (existing.attempts ?? 1) + 1;
+    existing.questionNumber = existing.questionNumber ?? questionNumberFromId(itemId);
     existing.mastered = false;
     existing.updatedAt = Date.now();
   } else {
-    appData.errors.push({ id, subjectId, lessonIndex: index, itemId, prompt, lastAnswer: String(answer ?? ''), correctAnswer, explanation, source, attempts: 1, mastered: false, updatedAt: Date.now() });
+    appData.errors.push({ id, subjectId, lessonIndex: index, itemId, questionNumber: questionNumberFromId(itemId), prompt, lastAnswer: String(answer ?? ''), correctAnswer, explanation, source, attempts: 1, mastered: false, updatedAt: Date.now() });
   }
-  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+  persistUserData();
+}
+
+function resolveSavedError(itemId, subjectId = activeSubject.id, index = lessonIndex) {
+  const id = `${topicRef(subjectId, index)}:${itemId}`;
+  const saved = appData.errors.find((item) => item.id === id && !item.mastered);
+  if (saved) { saved.mastered = true; saved.masteredAt = Date.now(); persistUserData(); }
 }
 
 function canManageTestData() {
-  // Przyszłe ograniczenie: zwracaj true tylko w trybie 👩 Mama.
-  return true;
+  return appData.mode === 'mama';
 }
+
+function questionNumberFromId(itemId) {
+  const match = String(itemId ?? '').match(/(?:quiz|exercise)-(\d+)/);
+  return match ? Number(match[1]) + 1 : null;
+}
+
+function trackTopic(update = {}) {
+  const ref = topicRef();
+  const previous = progress.topics[ref] ?? {};
+  progress.topics[ref] = { ...previous, started: true, startedAt: previous.startedAt ?? Date.now(), lastStudiedAt: Date.now(), ...update };
+  appData.progress = progress;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  persistUserData();
+}
+
+function recordExerciseResult(index, correct) {
+  const key = `${topicRef()}:exercise:${index}`;
+  const firstSuccessful = correct && !progress.exerciseResults[key];
+  progress.exerciseResults[key] = Boolean(correct);
+  const topic = progress.topics[topicRef()] ?? { started: true, startedAt: Date.now() };
+  topic.lastStudiedAt = Date.now();
+  topic.exerciseAttempts = (topic.exerciseAttempts ?? 0) + 1;
+  if (firstSuccessful) topic.exercisesCompleted = (topic.exercisesCompleted ?? 0) + 1;
+  progress.topics[topicRef()] = topic;
+  appData.progress = progress;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  persistUserData();
+}
+
+function setMode(mode) {
+  if (!['mama', 'aleksander'].includes(mode)) return;
+  appData.mode = mode;
+  appData.settings = { ...(appData.settings ?? {}), lastModeChangedAt: Date.now() };
+  persistUserData();
+  modeSwitchButton.textContent = mode === 'mama' ? '👩 Mama' : '👦 Aleksander';
+  if (modeDialog.open) modeDialog.close();
+  activeView = mode === 'mama' ? 'mother' : 'topics';
+  showDashboard = mode !== 'mama';
+  renderPanel();
+}
+
+document.querySelectorAll('[data-mode-choice]').forEach((button) => button.addEventListener('click', () => setMode(button.dataset.modeChoice)));
+modeSwitchButton.addEventListener('click', () => {
+  modeCancelButton.hidden = !appData.mode;
+  if (typeof modeDialog.showModal === 'function') modeDialog.showModal();
+  else modeDialog.setAttribute('open', '');
+});
+modeCancelButton.addEventListener('click', () => modeDialog.close());
+modeDialog.addEventListener('cancel', (event) => {
+  if (!appData.mode) event.preventDefault();
+});
 
 function showAppToast(message) {
   appToast.textContent = message;
@@ -120,34 +217,42 @@ resetConfirmButton.addEventListener('click', () => {
 });
 
 function clearSavedErrors() {
+  if (!canManageTestData()) return;
   appData.errors = [];
-  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+  persistUserData();
 }
 
 function resetResultsAndProgress() {
-  appData = { ...appData, errors: [], testScores: {}, testHistory: [] };
-  progress = { done: {} };
+  if (!canManageTestData()) return;
+  appData.errors = [];
+  appData.testScores = {};
+  appData.testResults = {};
+  appData.mistakes = appData.errors;
+  appData.testHistory = [];
+  progress = { done: {}, topics: {}, exerciseResults: {} };
   quizAnswers = {};
   quizGraded = false;
   reviewAnswers = {};
   reviewResults = {};
   oralIndex = 0;
   oralSessionDone = 0;
-  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+  persistUserData();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
 }
 
 function clearAllUserData() {
-  localStorage.removeItem(APP_DATA_KEY);
-  localStorage.removeItem(STORAGE_KEY);
-  appData = loadAppData();
-  progress = loadProgress();
+  if (!canManageTestData()) return;
+  const { mode, profile, settings } = appData;
+  progress = { done: {}, topics: {}, exerciseResults: {} };
+  appData = { schemaVersion: 1, profile, mode, settings, progress, testResults: {}, mistakes: [], testScores: {}, errors: [], testHistory: [], favorites: [], recentTopics: [], motherSessions: [] };
   quizAnswers = {};
   quizGraded = false;
   reviewAnswers = {};
   reviewResults = {};
   oralIndex = 0;
   oralSessionDone = 0;
+  persistUserData();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
 }
 
 function renderSubjects() {
@@ -206,6 +311,11 @@ function resolveTopic(ref) {
 
 function renderHomeDashboard() {
   if (!homeDashboard) return;
+  if (appData.mode === 'mama') {
+    homeDashboard.hidden = true;
+    homeDashboard.innerHTML = '';
+    return;
+  }
   const favoriteCount = appData.favorites.length;
   const errorCount = appData.errors.filter((item) => !item.mastered).length;
   const todayRefs = [...new Set([...(appData.recentTopics ?? []), ...appData.favorites])].slice(0, 3);
@@ -217,7 +327,7 @@ function renderHomeDashboard() {
   }).join('');
   const hidden = activeView !== 'topics' || !showDashboard;
   homeDashboard.hidden = hidden;
-  homeDashboard.innerHTML = `<div class="dashboard-actions"><button type="button" data-home-action="today">🏠 DZISIAJ SIĘ UCZĘ</button><button type="button" data-home-action="favorites">⭐ MOJE DO NAUKI <span>${favoriteCount}</span></button><button type="button" data-home-action="errors">🔁 POWTÓRZ MOJE BŁĘDY <span>${errorCount}</span></button><button type="button" data-home-action="fiveMinutes">⚡ MAM 5 MINUT</button><button type="button" data-home-action="progress">📊 MOJE POSTĘPY</button></div><div class="dashboard-today"><h3>🏠 Dzisiaj się uczę</h3><p>Mały krok też jest krokiem.</p><div class="today-topic-list">${today.map(({subject,lesson,index})=>`<button type="button" data-direct-topic="${subject.id}:${index}">${escapeHTML(subject.icon)} ${escapeHTML(lesson.title)} <small>${escapeHTML(subject.name)}</small></button>`).join('')}</div></div><div class="dashboard-progress"><h3>📊 Moje postępy</h3>${subjectProgress}</div>`;
+  homeDashboard.innerHTML = `<div class="dashboard-actions"><button type="button" data-home-action="subjects">📚 PRZEDMIOTY</button><button type="button" data-home-action="today">🏠 DZISIAJ SIĘ UCZĘ</button><button type="button" data-home-action="favorites">⭐ MOJE DO NAUKI <span>${favoriteCount}</span></button><button type="button" data-home-action="errors">🔄 POWTÓRZ MOJE BŁĘDY <span>${errorCount}</span></button><button type="button" data-home-action="progress">📊 MOJE POSTĘPY</button><button type="button" data-home-action="motherStudy">🎯 NAUKA Z MAMĄ</button></div><div class="dashboard-today"><h3>🏠 Dzisiaj się uczę</h3><p>Mały krok też jest krokiem.</p><div class="today-topic-list">${today.map(({subject,lesson,index})=>`<button type="button" data-direct-topic="${subject.id}:${index}">${escapeHTML(subject.icon)} ${escapeHTML(lesson.title)} <small>${escapeHTML(subject.name)}</small></button>`).join('')}</div></div><div class="dashboard-progress"><h3>📊 Moje postępy</h3>${subjectProgress}</div>`;
   homeDashboard.querySelectorAll('[data-home-action]').forEach((button) => button.addEventListener('click', () => {
     activeView = button.dataset.homeAction;
     renderPanel();
@@ -229,7 +339,8 @@ function renderHomeDashboard() {
     lessonIndex = found.index;
     showDashboard = false;
     appData.recentTopics = [topicRef(), ...(appData.recentTopics ?? []).filter((ref) => ref !== topicRef())].slice(0, 10);
-    localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+    persistUserData();
+    trackTopic();
     document.querySelector('#subject-title').textContent = activeSubject.name;
     document.querySelector('#current-subject-crumb').textContent = activeSubject.name;
     renderSubjects();
@@ -460,13 +571,13 @@ function renderTopicList() {
   const doneCount = items.filter((_, index) => progress.done[lessonKey(index)]).length;
   const progressCard = `<div class="subject-progress"><div class="subject-progress-label"><strong>Twój postęp</strong><span>Ukończone tematy: ${doneCount}/${items.length}</span></div><div class="subject-progress-track" role="progressbar" aria-label="Ukończone tematy" aria-valuemin="0" aria-valuemax="${items.length}" aria-valuenow="${doneCount}"><span style="width:${items.length ? Math.round(doneCount / items.length * 100) : 0}%"></span></div></div>`;
   const cards = items.map((lesson, index) => `<button type="button" class="lesson-topic-card" data-open-topic="${index}"><span class="lesson-topic-icon">📘</span><span class="lesson-topic-number">${String(index + 1).padStart(2, '0')}</span><span class="lesson-topic-name">${escapeHTML(lesson.title)}</span><span class="lesson-topic-arrow" aria-hidden="true">›</span></button>`).join('');
-  return `<div class="panel-head"><div><h3>Wybierz temat</h3><p class="panel-subtitle">Wybierz lekcję, której chcesz się pouczyć.</p></div><span class="topic-badge">${items.length} ${items.length === 1 ? 'temat' : 'tematy'}</span></div>${progressCard}${items.length ? `<div class="lesson-topic-grid">${cards}</div>` : emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu nowe tematy, gdy będziesz gotowy.', '📒')}`;
+  return `${canManageTestData() ? motherBackButton() : ''}<div class="panel-head"><div><h3>Wybierz temat</h3><p class="panel-subtitle">Wybierz lekcję, której chcesz się pouczyć.</p></div><span class="topic-badge">${items.length} ${items.length === 1 ? 'temat' : 'tematy'}</span></div>${progressCard}${items.length ? `<div class="lesson-topic-grid">${cards}</div>` : emptyState('Miejsce na nowe lekcje!', 'Ten przedmiot czeka na pierwsze tematy. Dodamy tu nowe tematy, gdy będziesz gotowy.', '📒')}`;
 }
 
 function renderMaterialMenu() {
   const lesson = currentLesson();
   if (!lesson) return renderTopicList();
-  const score = appData.testScores?.[topicRef()];
+  const score = appData.testResults?.[topicRef()]?.lastScore ?? appData.testScores?.[topicRef()];
   const unresolvedErrors = appData.errors.filter((item) => item.subjectId === activeSubject.id && item.lessonIndex === lessonIndex && !item.mastered).length;
   const topicProgress = `<div class="topic-learning-progress"><span>Notatki 📖</span><span>${lesson.reviewExercises?.length ? 'Ćwiczenia ✏️' : 'Ćwiczenia do dodania'}</span><span>Powtórka ${progress.done[lessonKey()] ? '✅' : 'do zrobienia'}</span><span>Sprawdzian ${score === undefined ? '—' : `${score}%`}</span>${unresolvedErrors ? `<span>Do powtórzenia: ${unresolvedErrors}</span>` : ''}</div>`;
   const options = [
@@ -477,7 +588,7 @@ function renderMaterialMenu() {
     ['quiz', '📝', 'SPRAWDZIAN', 'Sprawdź, ile już umiesz'],
     ['oral', '🎯', 'NAUKA Z MAMĄ', 'Pytania i odpowiedzi ustne'],
   ];
-  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Wróć do tematów</button><button type="button" class="learning-back-button secondary" data-nav="subjects">← Wszystkie przedmioty</button></div><div class="panel-head topic-screen-heading"><div><h3>📘 ${escapeHTML(lesson.title)}</h3><p class="panel-subtitle">Czego chcesz się teraz uczyć?</p></div></div>${topicProgress}<button type="button" class="favorite-topic-button" data-toggle-favorite>${isFavorite(activeSubject.id, lessonIndex) ? '⭐ Usuń z „Moje do nauki”' : '⭐ Dodaj do „Moje do nauki”'}</button><div class="material-choice-grid">${options.map(([id, icon, title, description]) => `<button type="button" class="material-choice-card" data-open-material="${id}"><span class="material-choice-icon">${icon}</span><span class="material-choice-title">${title}</span><span class="material-choice-description">${description}</span><span class="material-choice-arrow" aria-hidden="true">›</span></button>`).join('')}</div>`;
+  return `${canManageTestData() ? motherBackButton() : ''}<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Wróć do tematów</button><button type="button" class="learning-back-button secondary" data-nav="subjects">← Wszystkie przedmioty</button></div><div class="panel-head topic-screen-heading"><div><h3>📘 ${escapeHTML(lesson.title)}</h3><p class="panel-subtitle">Czego chcesz się teraz uczyć?</p></div></div>${topicProgress}<button type="button" class="favorite-topic-button" data-toggle-favorite>${isFavorite(activeSubject.id, lessonIndex) ? '⭐ Usuń z „Moje do nauki”' : '⭐ Dodaj do „Moje do nauki”'}</button><div class="material-choice-grid">${options.map(([id, icon, title, description]) => `<button type="button" class="material-choice-card" data-open-material="${id}"><span class="material-choice-icon">${icon}</span><span class="material-choice-title">${title}</span><span class="material-choice-description">${description}</span><span class="material-choice-arrow" aria-hidden="true">›</span></button>`).join('')}</div>`;
 }
 
 function renderMaterialContent() {
@@ -486,7 +597,7 @@ function renderMaterialContent() {
   const titles = { notes: '📖 NOTATKI', cheatsheet: '🧠 ŚCIĄGA', practice: '✏️ ĆWICZENIA', review: '🔄 POWTÓRKA', quiz: '📝 SPRAWDZIAN', oral: '🎯 NAUKA Z MAMĄ' };
   const renderers = { notes: renderNotes, cheatsheet: renderCheatsheet, practice: renderPractice, review: renderReview, quiz: renderQuiz, oral: renderOral };
   const tools = `<div class="learning-tools"><button type="button" data-read-notes>🔊 Przeczytaj</button><button type="button" data-pause-reading>⏸ Pauza</button><button type="button" data-resume-reading>▶ Wznów</button><button type="button" data-stop-reading>⏹ Zatrzymaj</button><button type="button" data-print-material>🖨 Drukuj</button></div>`;
-  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="materials">← ${escapeHTML(lesson.title)}</button><button type="button" class="learning-back-button secondary" data-nav="topics">← Wróć do tematów</button><button type="button" class="learning-back-button secondary" data-nav="subjects">← Wszystkie przedmioty</button></div><div class="learning-material-heading"><h3>${titles[activeTab]}</h3><p>${escapeHTML(lesson.title)}</p></div>${tools}<div class="learning-content-body">${renderers[activeTab]()}</div>`;
+  return `${canManageTestData() ? motherBackButton() : ''}<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="materials">← ${escapeHTML(lesson.title)}</button><button type="button" class="learning-back-button secondary" data-nav="topics">← Wróć do tematów</button><button type="button" class="learning-back-button secondary" data-nav="subjects">← Wszystkie przedmioty</button></div><div class="learning-material-heading"><h3>${titles[activeTab]}</h3><p>${escapeHTML(lesson.title)}</p></div>${tools}<div class="learning-content-body">${renderers[activeTab]()}</div>`;
 }
 
 function renderQuiz() {
@@ -578,18 +689,18 @@ function renderOral() {
 
 function renderTopicLinks(entries, emptyText) {
   if (!entries.length) return emptyState('Na razie pusto', emptyText, '🌱');
-  return `<div class="personal-topic-list">${entries.map(({subject,lesson,index,extra=''})=>`<article><button type="button" data-direct-topic="${subject.id}:${index}">📘 ${escapeHTML(lesson.title)} <small>${escapeHTML(subject.name)}</small></button>${extra}</article>`).join('')}</div>`;
+  return `<div class="personal-topic-list">${entries.map(({subject,lesson,index,extra=''})=>`<article><button type="button" data-direct-topic="${subject.id}:${index}">▶ Ucz się: ${escapeHTML(lesson.title)} <small>${escapeHTML(subject.name)}</small></button>${extra}</article>`).join('')}</div>`;
 }
 
 function renderFavorites() {
   const entries = appData.favorites.map(resolveTopic).filter(Boolean);
-  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>⭐ Moje do nauki</h3>${renderTopicLinks(entries, 'Dodaj gwiazdkę przy temacie, do którego chcesz wrócić.')}`;
+  return `${motherBackButton()}<h3>⭐ Moje do nauki</h3>${renderTopicLinks(entries, 'Dodaj gwiazdkę przy temacie, do którego chcesz wrócić.')}`;
 }
 
 function renderErrors() {
   const entries = appData.errors.filter((item) => !item.mastered);
-  const cards = entries.map((item) => { const found=resolveTopic(topicRef(item.subjectId,item.lessonIndex)); return `<article class="saved-error"><p>${escapeHTML(item.prompt)}</p><small>${found?`${escapeHTML(found.lesson.title)} · ${escapeHTML(found.subject.name)}`:'Temat'}</small><details><summary>Pokaż odpowiedź i wyjaśnienie</summary><p>Twoja odpowiedź: ${escapeHTML(item.lastAnswer)}</p><p>Poprawna odpowiedź: ${escapeHTML(item.correctAnswer ?? '')}</p><p>${escapeHTML(item.explanation ?? '')}</p></details><button type="button" data-error-mastered="${escapeHTML(item.id)}">Oznacz jako opanowane</button>${found?`<button type="button" data-direct-topic="${found.subject.id}:${found.index}">Wróć do tematu</button>`:''}</article>`; }).join('');
-  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>🔁 Powtórz moje błędy</h3><p>Masz ${entries.length} rzeczy do powtórzenia. Spokojnie, każda próba pomaga.</p>${cards?`<div class="personal-topic-list">${cards}</div>`:emptyState('Na razie nie ma błędów do powtórzenia.', 'Świetnie, możesz wybrać kolejny temat. 🌱')}<div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="errors">🧹 Wyczyść moje błędy</button></div>`;
+  const cards = entries.map((item) => { const found=resolveTopic(topicRef(item.subjectId,item.lessonIndex)); return `<article class="saved-error"><p>${item.questionNumber ? `<b>Pytanie ${item.questionNumber}.</b> ` : ''}${escapeHTML(item.prompt)}</p><small>${found?`${escapeHTML(found.lesson.title)} · ${escapeHTML(found.subject.name)}`:'Temat'} · ${item.attempts ?? 1} prób</small><details><summary>Pokaż odpowiedź</summary><p>Twoja odpowiedź: ${escapeHTML(item.lastAnswer)}</p><p>Poprawna odpowiedź: ${escapeHTML(item.correctAnswer ?? '')}</p><p>${escapeHTML(item.explanation ?? '')}</p></details>${canManageTestData() ? `<button type="button" data-error-mastered="${escapeHTML(item.id)}">Oznacz jako opanowane</button>` : ''}${found?`<button type="button" data-direct-topic="${found.subject.id}:${found.index}">Wróć do tematu</button>`:''}</article>`; }).join('');
+  return `${motherBackButton()}<h3>❌ ${appData.mode === 'mama' ? 'Błędy Aleksandra' : 'Powtórz moje błędy'}</h3><p>Masz ${entries.length} rzeczy do powtórzenia. Spokojnie, każda próba pomaga.</p>${cards?`<div class="personal-topic-list">${cards}</div>`:emptyState('Na razie nie ma błędów do powtórzenia.', 'Świetnie, możesz wybrać kolejny temat. 🌱')}${canManageTestData() ? '<div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="errors">🧹 Wyczyść moje błędy</button></div>' : ''}`;
 }
 
 function renderFiveMinutes() {
@@ -600,26 +711,83 @@ function renderFiveMinutes() {
 }
 
 function renderProgress() {
-  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>📊 Moje postępy</h3>${subjects.map((subject)=>{const done=subject.lessons.filter((_,index)=>progress.done[topicRef(subject.id,index)]).length;return `<section class="subject-progress"><div class="subject-progress-label"><strong>${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</strong><span>${done}/${subject.lessons.length} tematów</span></div><div class="subject-progress-track"><b style="width:${subject.lessons.length?Math.round(done/subject.lessons.length*100):0}%"></b></div></section>`}).join('')}<div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="results">♻️ Wyzeruj moje wyniki</button><button type="button" class="data-reset-button quiet" data-reset="all">🧹 Wyczyść wszystkie dane testowe</button></div>`;
+  const detailRows = subjects.flatMap((subject) => subject.lessons.map((lesson, index) => {
+    const ref = topicRef(subject.id, index);
+    const item = progress.topics[ref] ?? {};
+    const score = appData.testResults?.[ref] ?? appData.testScores?.[ref];
+    const completedExercises = item.exercisesCompleted ?? 0;
+    const totalExercises = lesson.reviewExercises?.length ?? 0;
+    const percent = progress.done[ref] ? 100 : Math.min(95, Math.round((item.started ? 20 : 0) + (totalExercises ? completedExercises / totalExercises * 40 : 0) + (score !== undefined ? 40 : 0)));
+    const errorNumbers = appData.errors.filter((error) => error.subjectId === subject.id && error.lessonIndex === index && error.source === 'quiz' && !error.mastered).map((error) => error.questionNumber).filter(Boolean);
+    return `<article class="topic-progress-card"><div class="topic-progress-heading"><strong>${escapeHTML(subject.name)} · ${escapeHTML(lesson.title)}</strong><span>${percent}%</span></div><div class="subject-progress-track"><b style="width:${percent}%"></b></div><p>${item.started ? 'Rozpoczęty' : 'Jeszcze nieotwarty'} · ćwiczenia: ${completedExercises}/${totalExercises}${score !== undefined ? ` · ostatni sprawdzian: ${typeof score === 'object' ? `${score.correct}/${score.total}` : `${score}%`}` : ' · sprawdzian: brak wyniku'}</p>${typeof score === 'object' && score.bestScore !== undefined ? `<small>Najlepszy wynik: ${score.bestScore}%</small>` : ''}<p>Do powtórki: ${errorNumbers.length ? `pytania ${[...new Set(errorNumbers)].join(', ')}` : 'brak zapisanych błędów'}</p><small>Ostatnia nauka: ${item.lastStudiedAt ? new Date(item.lastStudiedAt).toLocaleString('pl-PL') : 'brak danych'}</small></article>`;
+  })).join('');
+  const resultRows = (appData.testHistory ?? []).slice().reverse().slice(0, 12).map((result) => `<article class="result-history-row"><strong>${escapeHTML(result.subjectName)} · ${escapeHTML(result.lessonTitle)}</strong><span>${result.correct}/${result.total} poprawnych (${result.score}%)</span><small>${new Date(result.completedAt).toLocaleString('pl-PL')} · błędne pytania: ${(result.wrongNumbers ?? []).length ? result.wrongNumbers.join(', ') : 'brak'}</small></article>`).join('');
+  return `${motherBackButton()}<h3>📊 ${canManageTestData() ? 'Postępy Aleksandra' : 'Moje postępy'}</h3><div class="progress-topic-list">${detailRows}</div>${canManageTestData() ? `<section class="mother-report-section"><h4>📝 Wyniki sprawdzianów</h4>${resultRows || '<p>Nie ma jeszcze zapisanych sprawdzianów.</p>'}</section><div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="results">♻️ Wyzeruj moje wyniki</button><button type="button" class="data-reset-button quiet" data-reset="all">🧹 Wyczyść wszystkie dane testowe</button></div>` : ''}`;
+}
+
+function motherBackButton() {
+  return canManageTestData() ? '<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="mother">← Panel Mamy</button></div>' : '<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div>';
+}
+
+function renderMotherPanel() {
+  const visited = [...new Set(appData.recentTopics ?? [])].map(resolveTopic).filter(Boolean);
+  const allTopics = subjects.flatMap((subject) => subject.lessons.map((lesson, index) => ({ subject, lesson, index })));
+  const stats = (appData.testHistory ?? []).reduce((total, result) => ({ correct: total.correct + result.correct, wrong: total.wrong + result.wrong }), { correct: 0, wrong: 0 });
+  const commonErrors = Object.values(appData.errors.filter((item) => !item.mastered).reduce((counts, item) => {
+    const key = `${item.subjectId}:${item.lessonIndex}:${item.prompt}`;
+    counts[key] ??= { prompt: item.prompt, count: 0, subjectId: item.subjectId, lessonIndex: item.lessonIndex };
+    counts[key].count += item.attempts ?? 1;
+    return counts;
+  }, {})).sort((a, b) => b.count - a.count).slice(0, 5);
+  const topicRows = allTopics.map(({ subject, lesson, index }) => {
+    const ref = topicRef(subject.id, index);
+    const item = progress.topics[ref] ?? {};
+    const score = appData.testResults?.[ref] ?? appData.testScores?.[ref];
+    const mistakes = appData.errors.filter((error) => error.subjectId === subject.id && error.lessonIndex === index && !error.mastered);
+    const pct = progress.done[ref] ? 100 : Math.min(95, Math.round((item.started ? 20 : 0) + ((lesson.reviewExercises?.length ?? 0) ? (item.exercisesCompleted ?? 0) / lesson.reviewExercises.length * 40 : 0) + (score !== undefined ? 40 : 0)));
+    return `<article class="mother-topic-row"><div class="topic-progress-heading"><strong>${escapeHTML(subject.name)} · ${escapeHTML(lesson.title)}</strong><span>${pct}%</span></div><div class="subject-progress-track"><b style="width:${pct}%"></b></div><small>${progress.done[ref] ? 'Ukończony' : item.started ? 'Rozpoczęty' : 'Jeszcze nieotwierany'} · ćwiczenia ${item.exercisesCompleted ?? 0}/${lesson.reviewExercises?.length ?? 0} (prób: ${item.exerciseAttempts ?? 0}) · sprawdzian ${score === undefined ? 'brak wyniku' : typeof score === 'object' ? `${score.correct}/${score.total} (${score.lastScore}%, najlepszy: ${score.bestScore}%)` : `${score}%`} · błędne pytania ${mistakes.filter((error) => error.source === 'quiz').map((error) => error.questionNumber).filter(Boolean).join(', ') || 'brak'}${item.lastStudiedAt ? ` · ${new Date(item.lastStudiedAt).toLocaleDateString('pl-PL')}` : ''}</small></article>`;
+  }).join('');
+  const errorList = appData.errors.filter((item) => !item.mastered);
+  const resultRows = (appData.testHistory ?? []).slice().reverse().slice(0, 8).map((item) => `<li>${escapeHTML(item.subjectName)} · ${escapeHTML(item.lessonTitle)}: ${item.correct}/${item.total} (${item.score}%), błędy: ${(item.wrongNumbers ?? []).join(', ') || 'brak'}</li>`).join('');
+  const favoriteEntries = appData.favorites.map(resolveTopic).filter(Boolean);
+  const oralChoices = allTopics.map(({ subject, lesson, index }) => `<button type="button" data-start-mother-oral="${subject.id}:${index}">🎯 ${escapeHTML(subject.name)} · ${escapeHTML(lesson.title)}</button>`).join('');
+  const completedSessions = (appData.motherSessions ?? []).slice().reverse().slice(0, 8).map((session) => `<li>${escapeHTML(session.subjectName)} · ${escapeHTML(session.lessonTitle)} — ${session.questions} pytań, ${new Date(session.completedAt).toLocaleString('pl-PL')}</li>`).join('');
+  return `<section class="mother-dashboard"><div class="mother-panel-heading"><span>👩 PANEL MAMY</span><p>Wspieraj naukę Aleksandra spokojnie, krok po kroku.</p></div><div class="mother-summary-grid"><article><strong>${visited.length}</strong><span>ostatnio otwieranych tematów</span></article><article><strong>${(appData.testHistory ?? []).length}</strong><span>ukończonych sprawdzianów</span></article><article><strong>${stats.correct}</strong><span>poprawnych odpowiedzi</span></article><article><strong>${stats.wrong}</strong><span>błędnych odpowiedzi</span></article></div>
+  <details open class="mother-report-section"><summary>📊 Postępy Aleksandra i tematy</summary><div class="mother-topic-list">${topicRows || '<p>Dodajemy tematy do nauki.</p>'}</div></details>
+  <details class="mother-report-section"><summary>📝 Wyniki sprawdzianów</summary><ul class="mother-result-list">${resultRows || '<li>Nie ma jeszcze zakończonych sprawdzianów.</li>'}</ul></details>
+  <details class="mother-report-section"><summary>❌ Moje błędy (${errorList.length})</summary>${errorList.length ? `<div class="personal-topic-list">${errorList.slice(0, 10).map((item) => { const found = resolveTopic(topicRef(item.subjectId, item.lessonIndex)); return `<article class="saved-error"><p>${item.questionNumber ? `Pytanie ${item.questionNumber}. ` : ''}${escapeHTML(item.prompt)}</p><small>${found ? `${escapeHTML(found.subject.name)} · ${escapeHTML(found.lesson.title)}` : ''}</small><details><summary>Pokaż odpowiedź</summary><p>Odpowiedź Aleksandra: ${escapeHTML(item.lastAnswer)}</p><p>Poprawna odpowiedź: ${escapeHTML(item.correctAnswer ?? '')}</p><p>${escapeHTML(item.explanation ?? '')}</p></details><button type="button" data-error-mastered="${escapeHTML(item.id)}">Oznacz jako opanowane</button>${found ? `<button type="button" data-direct-topic="${found.subject.id}:${found.index}">Wróć do tematu</button>` : ''}</article>`; }).join('')}</div>` : '<p>Nie ma zapisanych błędów.</p>'}</details>
+  <details class="mother-report-section"><summary>🔄 Tematy do powtórzenia</summary>${renderTopicLinks([...new Map(errorList.map((item) => { const found = resolveTopic(topicRef(item.subjectId, item.lessonIndex)); return found ? [topicRef(item.subjectId, item.lessonIndex), found] : []; }).filter(([key]) => key).map(([key, value]) => [key, value])).values()], 'Nie ma tematów do pilnej powtórki.')}</details>
+  <details class="mother-report-section"><summary>📌 Najczęściej powtarzające się błędy</summary>${commonErrors.length ? `<ol>${commonErrors.map((item) => `<li>${escapeHTML(item.prompt)} <small>(${item.count} prób)</small></li>`).join('')}</ol>` : '<p>Brak powtarzających się błędów.</p>'}</details>
+  <details class="mother-report-section"><summary>🎯 Nauka z mamą — wybierz temat</summary><p>Wybierz temat, a potem pytaj i odpowiadajcie na zmianę.</p><div class="mother-topic-choices">${oralChoices || '<p>Wybierz przedmiot i dodaj temat.</p>'}</div><h4>Zakończone sesje</h4><ul class="mother-result-list">${completedSessions || '<li>Nie ma jeszcze zakończonych sesji.</li>'}</ul></details>
+  <details class="mother-report-section"><summary>⭐ Moje do nauki (${favoriteEntries.length})</summary>${renderTopicLinks(favoriteEntries, 'Dodaj gwiazdkę przy temacie, do którego chcecie wrócić.')}</details>
+  <details class="mother-report-section"><summary>📚 Przedmioty</summary><div class="mother-topic-choices">${subjects.map((subject) => `<button type="button" data-mother-subject="${subject.id}">${escapeHTML(subject.icon)} ${escapeHTML(subject.name)}</button>`).join('')}</div></details>
+  <div class="data-reset-tools"><button type="button" class="data-reset-button" data-reset="errors">🧹 Wyczyść moje błędy</button><button type="button" class="data-reset-button" data-reset="results">♻️ Wyzeruj moje wyniki</button><button type="button" class="data-reset-button quiet" data-reset="all">🧹 Wyczyść wszystkie dane testowe</button></div></section>`;
 }
 
 function renderToday() {
   const refs=[...(appData.recentTopics??[]),...appData.favorites,...appData.errors.filter((item)=>!item.mastered).map((item)=>topicRef(item.subjectId,item.lessonIndex))];
   const unique=[...new Set(refs)].map(resolveTopic).filter(Boolean).slice(0,5);
   const entries=unique.length?unique:subjects.flatMap((subject)=>subject.lessons.map((lesson,index)=>({subject,lesson,index}))).slice(0,5);
-  return `<div class="learning-nav"><button type="button" class="learning-back-button" data-nav="topics">← Przedmiot i tematy</button></div><h3>🏠 Dzisiaj się uczę</h3><p>Wybierz jedną małą rzecz na dziś. 🌱</p>${renderTopicLinks(entries,'Wybierz temat i zrób mały krok.')}`;
+  return `${motherBackButton()}<h3>🏠 Dzisiaj się uczę</h3><p>Wybierz jedną małą rzecz na dziś. 🌱</p>${renderTopicLinks(entries,'Wybierz temat i zrób mały krok.')}`;
+}
+
+function renderMotherStudySelection() {
+  const entries = subjects.flatMap((subject) => subject.lessons.map((lesson, index) => ({ subject, lesson, index })));
+  const choices = entries.map(({ subject, lesson, index }) => `<button type="button" data-start-mother-oral="${subject.id}:${index}">🎯 ${escapeHTML(subject.name)} · ${escapeHTML(lesson.title)}</button>`).join('');
+  return `<h3>🎯 Nauka z mamą</h3><p>Wybierz temat. Mama zadaje pytanie, Aleksander odpowiada, a potem przechodzicie dalej.</p><div class="mother-topic-choices">${choices || emptyState('Brak tematów', 'Wybierz przedmiot i dodaj materiały.', '📚')}</div>`;
 }
 
 function renderPanel() {
   stopSpeechPlayback();
-  const screens = { topics: renderTopicList, materials: renderMaterialMenu, content: renderMaterialContent, today: renderToday, favorites: renderFavorites, errors: renderErrors, fiveMinutes: renderFiveMinutes, progress: renderProgress };
+  const screens = { mother: renderMotherPanel, motherStudy: renderMotherStudySelection, topics: renderTopicList, materials: renderMaterialMenu, content: renderMaterialContent, today: renderToday, favorites: renderFavorites, errors: renderErrors, fiveMinutes: renderFiveMinutes, progress: renderProgress };
   panel.innerHTML = (screens[activeView] ?? renderTopicList)();
   renderHomeDashboard();
   panel.querySelectorAll('[data-open-topic]').forEach((button) => button.addEventListener('click', () => {
     lessonIndex = Number(button.dataset.openTopic);
     activeView = 'materials';
+    trackTopic();
     appData.recentTopics = [topicRef(), ...(appData.recentTopics ?? []).filter((ref) => ref !== topicRef())].slice(0, 10);
-    localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+    persistUserData();
     renderHomeDashboard();
     quizAnswers = {};
     quizGraded = false;
@@ -630,7 +798,7 @@ function renderPanel() {
   panel.querySelectorAll('[data-open-material]').forEach((button) => button.addEventListener('click', () => {
     activeTab = button.dataset.openMaterial;
     activeView = 'content';
-    if (activeTab === 'oral') { oralIndex = 0; oralSessionDone = 0; }
+    if (activeTab === 'oral') { oralIndex = 0; oralSessionDone = 0; oralSessionStartedAt = Date.now(); }
     quizAnswers = {};
     quizGraded = false;
     renderPanel();
@@ -640,6 +808,11 @@ function renderPanel() {
     renderPanel();
   });
   panel.querySelectorAll('[data-nav]').forEach((button) => button.addEventListener('click', () => {
+    if (button.dataset.nav === 'mother') {
+      activeView = 'mother';
+      renderPanel();
+      return;
+    }
     if (button.dataset.nav === 'subjects') {
       activeView = 'topics';
       showDashboard = true;
@@ -663,14 +836,38 @@ function renderPanel() {
     lessonIndex = Number(rawIndex);
     showDashboard = false;
     activeView = 'materials';
+    trackTopic();
     document.querySelector('#subject-title').textContent = activeSubject.name;
     document.querySelector('#current-subject-crumb').textContent = activeSubject.name;
     appData.recentTopics = [topicRef(), ...(appData.recentTopics ?? []).filter((ref) => ref !== topicRef())].slice(0, 10);
-    localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+    persistUserData();
     renderSubjects();
     renderPanel();
   }));
+  panel.querySelectorAll('[data-mother-subject]').forEach((button) => button.addEventListener('click', () => {
+    selectSubject(button.dataset.motherSubject);
+  }));
+  panel.querySelectorAll('[data-start-mother-oral]').forEach((button) => button.addEventListener('click', () => {
+    const [subjectId, rawIndex] = button.dataset.startMotherOral.split(':');
+    const found = subjects.find((subject) => subject.id === subjectId);
+    if (!found?.lessons[Number(rawIndex)]) return;
+    activeSubject = found;
+    lessonIndex = Number(rawIndex);
+    document.querySelector('#subject-title').textContent = found.name;
+    document.querySelector('#current-subject-crumb').textContent = found.name;
+    renderSubjects();
+    trackTopic();
+    appData.recentTopics = [topicRef(), ...(appData.recentTopics ?? []).filter((ref) => ref !== topicRef())].slice(0, 10);
+    persistUserData();
+    activeTab = 'oral';
+    activeView = 'content';
+    oralIndex = 0;
+    oralSessionDone = 0;
+    oralSessionStartedAt = Date.now();
+    renderPanel();
+  }));
   panel.querySelectorAll('[data-error-mastered]').forEach((button) => button.addEventListener('click', () => {
+    if (!canManageTestData()) return;
     const item = appData.errors.find((error) => error.id === button.dataset.errorMastered);
     if (item) { item.mastered = true; item.masteredAt = Date.now(); saveAppData(); renderPanel(); }
   }));
@@ -692,9 +889,9 @@ function renderPanel() {
         successMessage: 'Gotowe! Wyniki i postępy zostały wyzerowane.',
       },
       all: {
-        title: 'Wyczyść wszystkie dane testowe?',
-        message: 'Czy na pewno chcesz wyczyścić wszystkie zapisane dane korzystania z aplikacji? Materiały edukacyjne pozostaną bez zmian.',
-        confirmLabel: 'TAK, WYCZYŚĆ',
+        title: 'Wyzerować wyniki Aleksandra?',
+        message: 'Czy na pewno chcesz wyzerować wyniki Aleksandra? Usunięte zostaną tylko zapisane postępy, wyniki, błędy i historia korzystania. Materiały edukacyjne pozostaną bez zmian.',
+        confirmLabel: 'WYZERUJ',
         action: clearAllUserData,
         successMessage: 'Gotowe! Dane użytkownika zostały wyczyszczone.',
       },
@@ -712,9 +909,14 @@ function renderPanel() {
     oralSessionDone += 1;
     if (button.dataset.oralResult === 'repeat') saveError({ itemId: item.id, prompt: item.prompt, answer: 'Odpowiedź ustna do powtórzenia', correctAnswer: item.answer, explanation: item.explanation, source: 'oral' });
     oralIndex += 1;
+    if (oralIndex >= oralQuestions().length) {
+      appData.motherSessions.push({ subjectId: activeSubject.id, subjectName: activeSubject.name, lessonIndex, lessonTitle: currentLesson()?.title ?? '', questions: oralSessionDone, completedAt: Date.now(), durationMs: oralSessionStartedAt ? Date.now() - oralSessionStartedAt : null });
+      trackTopic({ lastMotherSessionAt: Date.now() });
+      persistUserData();
+    }
     renderPanel();
   }));
-  panel.querySelector('[data-reset-oral]')?.addEventListener('click', () => { oralIndex = 0; oralSessionDone = 0; renderPanel(); });
+  panel.querySelector('[data-reset-oral]')?.addEventListener('click', () => { oralIndex = 0; oralSessionDone = 0; oralSessionStartedAt = Date.now(); renderPanel(); });
   panel.querySelectorAll('[data-choice]').forEach((button) => button.addEventListener('click', () => {
     const questionIndex = Number(button.dataset.choice);
     quizAnswers[questionIndex] = Number(button.dataset.value);
@@ -755,6 +957,8 @@ function renderPanel() {
     const isChoice = exercise?.type === 'choice' || exercise?.type === 'truefalse';
     const expected = isChoice ? exercise.correct : exercise?.acceptedAnswers ?? [];
     reviewResults[key] = isChoice ? Number(answer) === Number(expected) : expected.some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer));
+    recordExerciseResult(exerciseIndex, reviewResults[key]);
+    if (reviewResults[key]) resolveSavedError(`exercise-${exerciseIndex}`);
     if (!reviewResults[key]) saveError({ itemId: `exercise-${exerciseIndex}`, prompt: exercise?.prompt, answer: isChoice ? exercise?.options?.[Number(answer)] : answer, correctAnswer: isChoice ? exercise?.options?.[exercise.correct] ?? (exercise.correct === 0 ? 'Prawda' : 'Fałsz') : expected.join(' lub '), explanation: exercise?.hint, source: 'exercise' });
     renderPanel();
   }));
@@ -767,6 +971,7 @@ function renderPanel() {
   panel.querySelectorAll('[data-review]').forEach((checkbox) => checkbox.addEventListener('change', () => {
     const index = Number(checkbox.dataset.review);
     progress.done[lessonKey(index)] = checkbox.checked;
+    trackTopic({ completed: checkbox.checked, completedAt: checkbox.checked ? Date.now() : null });
     saveProgress();
     renderPanel();
   }));
@@ -786,6 +991,9 @@ function gradeOpenQuestion(questionIndex) {
   const answer = quizAnswers[questionIndex] ?? '';
   const acceptedAnswers = question.acceptedAnswers ?? [];
   const correct = acceptedAnswers.some((candidate) => normalizeAnswer(candidate) === normalizeAnswer(answer));
+  trackTopic();
+  if (correct) resolveSavedError(`quiz-${questionIndex}`);
+  if (!correct && String(answer).trim()) saveError({ itemId: `quiz-${questionIndex}`, prompt: question.question, answer, correctAnswer: acceptedAnswers.join(' lub '), explanation: questionExplanation(question), source: 'quiz' });
   const input = panel.querySelector(`[data-open-answer="${questionIndex}"]`);
   const feedback = panel.querySelector(`#quiz-feedback-${questionIndex}`);
   if (!String(answer).trim()) {
@@ -807,6 +1015,7 @@ function gradeQuiz() {
   if (!questions.length || quizGraded) return;
   let correctCount = 0;
   let answeredCount = 0;
+  const wrongNumbers = [];
 
   questions.forEach((question, questionIndex) => {
     const isOpen = question.type === 'open';
@@ -826,6 +1035,8 @@ function gradeQuiz() {
 
     answeredCount += 1;
     if (correct) correctCount += 1;
+    else wrongNumbers.push(questionIndex + 1);
+    if (correct) resolveSavedError(`quiz-${questionIndex}`);
     if (!correct) saveError({ itemId: `quiz-${questionIndex}`, prompt: question.question, answer: isOpen ? rawAnswer : question.answers?.[Number(rawAnswer)], correctAnswer: isOpen ? (question.acceptedAnswers ?? []).join(' lub ') : question.answers?.[question.correct], explanation, source: 'quiz' });
     feedback.textContent = isOpen
       ? (correct
@@ -847,12 +1058,19 @@ function gradeQuiz() {
     }
   });
 
-  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
-  renderHomeDashboard();
-
   quizGraded = answeredCount === questions.length;
-  if (quizGraded) appData.testScores[topicRef()] = Math.round(correctCount / questions.length * 100);
-  localStorage.setItem(APP_DATA_KEY, JSON.stringify(appData));
+  trackTopic({ lastTestAt: Date.now() });
+  if (quizGraded) {
+    const scorePercent = Math.round(correctCount / questions.length * 100);
+    const prior = appData.testResults[topicRef()] ?? {};
+    appData.testScores[topicRef()] = scorePercent;
+    appData.testResults[topicRef()] = { lastScore: scorePercent, bestScore: Math.max(prior.bestScore ?? 0, scorePercent), correct: correctCount, wrong: questions.length - correctCount, total: questions.length, wrongNumbers, completedAt: Date.now() };
+    appData.testHistory.push({ subjectId: activeSubject.id, subjectName: activeSubject.name, lessonIndex, lessonTitle: currentLesson()?.title ?? '', correct: correctCount, wrong: questions.length - correctCount, total: questions.length, score: scorePercent, wrongNumbers, completedAt: Date.now() });
+    if (progress.topics[topicRef()]) progress.topics[topicRef()].completedTestCount = (progress.topics[topicRef()].completedTestCount ?? 0) + 1;
+  }
+  persistUserData();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  renderHomeDashboard();
   const score = panel.querySelector('#quiz-score');
   score.innerHTML = answeredCount < questions.length
     ? `Na razie: ${correctCount} poprawnych z ${answeredCount} sprawdzonych. Uzupełnij pozostałe odpowiedzi.`
@@ -869,5 +1087,13 @@ function gradeQuiz() {
 }
 
 renderSubjects();
+modeSwitchButton.textContent = appData.mode === 'mama' ? '👩 Mama' : '👦 Aleksander';
+activeView = appData.mode === 'mama' ? 'mother' : 'topics';
+showDashboard = appData.mode !== 'mama';
 renderPanel();
+if (!appData.mode) {
+  modeCancelButton.hidden = true;
+  if (typeof modeDialog.showModal === 'function') modeDialog.showModal();
+  else modeDialog.setAttribute('open', '');
+}
 })();
