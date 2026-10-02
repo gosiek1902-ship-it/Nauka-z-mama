@@ -6,3 +6,4 @@ android/local.properties
 android/**/build/
 *.apk
 !Aleksander-Kozdra-Ucze-sie-po-swojemu.apk
+!Aleksander-Kozdra-Ucze-sie-po-swojemu-final-release.apk
