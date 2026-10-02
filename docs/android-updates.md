@@ -6,7 +6,7 @@ Android zachowuje nazwę, ikonę, `pl.tomagro.aleksanderuczesie` oraz dotychczas
 
 Netlify musi mieć podłączone repozytorium `gosiek1902-ship-it/Nauka-z-mama` i gałąź produkcyjną `main`. `netlify.toml` ustawia budowanie przez `node scripts/build-web.mjs` i publikację `www`. Konfiguracja wyłącza przekształcanie plików po obliczeniu sum kontrolnych.
 
-Skrypt nie zmienia źródeł lekcji. Generuje identyfikator SHA-256 na podstawie zawartości plików i kontraktu `app-release.json`. Publikuje stronę/PWA, `/updates/latest.json` i `/updates/releases/<wersja>/...`. Każdy plik ma rozmiar i SHA-256. Nie trzeba ręcznie zwiększać wersji po dodaniu materiałów. Pojedynczy deploy zawiera cały pakiet. Jeśli podczas pobierania Netlify publikuje kolejną wersję i poprzednie pliki przestają być dostępne, pobieranie nie jest zatwierdzane; następne sprawdzenie pobierze aktualny pakiet.
+Skrypt nie zmienia źródeł lekcji. Generuje identyfikator SHA-256 na podstawie zawartości plików, skryptu publikacji i kontraktu `app-release.json`. Publikuje stronę/PWA, `/updates/latest.json` i `/updates/releases/<wersja>/...`. Każdy plik ma rozmiar i SHA-256. Pakiet Androida używa transportu `raw-files-v1`: zasoby są publikowane z dodatkowym rozszerzeniem `.bin` i typem `application/octet-stream`, aby Netlify nie wstrzykiwał fragmentów kodu do HTML. Android zapisuje zweryfikowane bajty pod oryginalnymi nazwami. Strona/PWA nadal otrzymuje zwykłe pliki HTML/JS/CSS. Nie trzeba ręcznie zwiększać wersji po dodaniu materiałów. Pojedynczy deploy zawiera cały pakiet. Jeśli podczas pobierania Netlify publikuje kolejną wersję i poprzednie pliki przestają być dostępne, pobieranie nie jest zatwierdzane; następne sprawdzenie pobierze aktualny pakiet.
 
 ## Android
 
@@ -26,7 +26,7 @@ Android nie rejestruje service workera. Przy ładowaniu usuwa wyłącznie wcześ
 
 ## Zgodność i pierwsza instalacja
 
-Kontrakt początkowy: protokół 1, `nativeApi: 1`, `dataSchema: 2`. Zmiana zależności natywnych, origin, package ID lub niezgodna migracja danych wymaga osobnego planu i ewentualnie nowego APK; publikacja niezgodnego kontraktu nie jest przyjmowana przez ten aktualizator.
+Kontrakt początkowy: protokół 1, transport `raw-files-v1`, `nativeApi: 1`, `dataSchema: 2`. Zmiana zależności natywnych, origin, package ID lub niezgodna migracja danych wymaga osobnego planu i ewentualnie nowego APK; publikacja niezgodnego kontraktu nie jest przyjmowana przez ten aktualizator.
 
 Przed jednorazowym zbudowaniem APK należy uruchomić `node scripts/build-web.mjs` i synchronizację Capacitor. APK musi być podpisany kluczem zgodnym z już zainstalowaną aplikacją, mieć większy versionCode i być instalowany jako aktualizacja, bez odinstalowania. Tego klucza nie należy zmieniać. Ta implementacja nie buduje APK i nie zwiększa jeszcze versionCode.
 

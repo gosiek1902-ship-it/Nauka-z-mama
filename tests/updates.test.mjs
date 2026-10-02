@@ -20,6 +20,7 @@ test('published release is complete, versioned, compatible, and identical to web
   assert.match(release.version, /^[a-f0-9]{64}$/);
   assert.equal(release.appId, 'pl.tomagro.aleksanderuczesie');
   assert.equal(release.nativeApi, 1);
+  assert.equal(release.transport, 'raw-files-v1');
   assert.equal(release.dataSchema, 2);
   assert.equal(release.basePath, `/updates/releases/${release.version}/`);
   assert.ok(release.files.length <= 128);
@@ -27,7 +28,7 @@ test('published release is complete, versioned, compatible, and identical to web
   let total = 0;
   for (const file of release.files) {
     assert.match(file.path, /^(index\.html|styles\.css|manifest\.webmanifest|service-worker\.js|app-version\.json|src\/[\w-]+\.js|assets\/icons\/[\w-]+\.png)$/);
-    const bytes = await read(`www${release.basePath}${file.path}`);
+    const bytes = await read(`www${release.basePath}${file.path}.bin`);
     assert.equal(bytes.length, file.size);
     assert.equal(sha(bytes), file.sha256);
     assert.ok(file.size <= 4 * 1024 * 1024);

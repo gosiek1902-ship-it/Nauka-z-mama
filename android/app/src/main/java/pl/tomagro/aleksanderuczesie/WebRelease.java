@@ -27,6 +27,7 @@ final class WebRelease {
         try {
             JSONObject data = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
             UpdatePolicy.require(data.getInt("schemaVersion") == 1
+                && data.getString("transport").equals("raw-files-v1")
                 && data.getString("appId").equals(UpdatePolicy.APP_ID)
                 && data.getInt("nativeApi") == UpdatePolicy.NATIVE_API
                 && data.getInt("dataSchema") == UpdatePolicy.DATA_SCHEMA, "Incompatible release");
@@ -60,6 +61,7 @@ final class WebRelease {
             UpdatePolicy.require(version.equals(runtime.getString("version"))
                 && UpdatePolicy.APP_ID.equals(runtime.getString("appId"))
                 && runtime.getInt("schemaVersion") == 1
+                && runtime.getString("transport").equals("raw-files-v1")
                 && runtime.getInt("nativeApi") == UpdatePolicy.NATIVE_API
                 && runtime.getInt("dataSchema") == UpdatePolicy.DATA_SCHEMA, "Runtime version mismatch");
         } catch (JSONException error) { throw new IOException("Invalid runtime version", error); }

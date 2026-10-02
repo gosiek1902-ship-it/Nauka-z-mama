@@ -21,7 +21,7 @@ public class WebReleaseTest {
             "src/app.js", "src/subjects.js", "src/expanded-content.js", "src/android-updates.js", "src/register-service-worker.js"}) {
             files.put(new JSONObject().put("path", path).put("size", 1).put("sha256", VERSION));
         }
-        return new JSONObject().put("schemaVersion", 1).put("appId", UpdatePolicy.APP_ID)
+        return new JSONObject().put("schemaVersion", 1).put("transport", "raw-files-v1").put("appId", UpdatePolicy.APP_ID)
             .put("nativeApi", 1).put("dataSchema", 2).put("version", VERSION)
             .put("basePath", "/updates/releases/" + VERSION + "/").put("files", files);
     }
@@ -39,6 +39,7 @@ public class WebReleaseTest {
     @Test public void refusesWrongPackageProtocolNativeApiAndDataSchema() throws Exception {
         rejected(manifest().put("appId", "another.application"));
         rejected(manifest().put("schemaVersion", 2));
+        rejected(manifest().put("transport", "unknown-transport"));
         rejected(manifest().put("nativeApi", 2));
         rejected(manifest().put("dataSchema", 3));
     }

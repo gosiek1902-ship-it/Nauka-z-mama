@@ -91,7 +91,7 @@ final class AndroidReleaseManager {
                     UpdatePolicy.require(temporary.mkdir(), "Cannot create download directory");
                     for (WebRelease.Asset asset : release.files) {
                         if (closed || Thread.currentThread().isInterrupted()) throw new IOException("Download interrupted");
-                        byte[] bytes = download(release.basePath + asset.path, asset.size);
+                        byte[] bytes = download(release.basePath + asset.path + ".bin", asset.size);
                         UpdatePolicy.require(bytes.length == asset.size && UpdatePolicy.digest(bytes).equals(asset.sha256), "Asset checksum mismatch");
                         write(new File(temporary, asset.path), bytes);
                     }

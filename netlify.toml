@@ -22,3 +22,5 @@
   for = "/updates/releases/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+    Content-Type = "application/octet-stream"
+    X-Content-Type-Options = "nosniff"

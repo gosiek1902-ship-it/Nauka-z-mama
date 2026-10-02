@@ -1,6 +1,7 @@
 {
   "appId": "pl.tomagro.aleksanderuczesie",
   "schemaVersion": 1,
+  "transport": "raw-files-v1",
   "nativeApi": 1,
   "dataSchema": 2
 }

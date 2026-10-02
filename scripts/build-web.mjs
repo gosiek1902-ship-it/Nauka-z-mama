@@ -31,7 +31,8 @@ const compatibility = JSON.parse(await readFile(join(root, 'app-release.json'), 
 const sourceFiles = await listFiles(webDir);
 const fingerprint = [];
 for (const path of sourceFiles) fingerprint.push([path, sha256(await readFile(join(webDir, path)))]);
-const version = sha256(JSON.stringify({ compatibility, fingerprint }));
+const generatorSha256 = sha256(await readFile(fileURLToPath(import.meta.url)));
+const version = sha256(JSON.stringify({ compatibility, generatorSha256, fingerprint }));
 const runtimeVersion = { ...compatibility, version };
 await writeFile(join(webDir, 'app-version.json'), JSON.stringify(runtimeVersion, null, 2));
 const worker = await readFile(join(webDir, 'service-worker.js'), 'utf8');
@@ -44,7 +45,9 @@ for (const path of paths) {
   const bytes = await readFile(join(webDir, path));
   files.push({ path, size: bytes.length, sha256: sha256(bytes) });
   await mkdir(resolve(releaseDirectory, path, '..'), { recursive: true });
-  await writeFile(join(releaseDirectory, path), bytes);
+  // Netlify can inject snippets into HTML even when asset processing is disabled.
+  // Neutral binary transport preserves exact bytes; Android restores the original filename.
+  await writeFile(join(releaseDirectory, `${path}.bin`), bytes);
 }
 const manifest = { ...runtimeVersion, basePath: `/updates/releases/${version}/`, files };
 await writeFile(join(releaseDirectory, 'release.json'), JSON.stringify(manifest, null, 2));
