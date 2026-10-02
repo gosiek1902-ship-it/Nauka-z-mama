@@ -9,7 +9,7 @@
     "android:add": "node scripts/generate-pwa-icons.mjs && node scripts/build-web.mjs && cap add android",
     "android:sync": "node scripts/generate-pwa-icons.mjs && node scripts/build-web.mjs && cap sync android",
     "android:debug": "node scripts/generate-pwa-icons.mjs && node scripts/build-web.mjs && cap sync android && cd android && gradlew.bat assembleDebug",
-    "android:icons": "capacitor-assets generate --android --assetPath assets --androidProject android"
+    "android:icons": "node scripts/generate-android-icons.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
