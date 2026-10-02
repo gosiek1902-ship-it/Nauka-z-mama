@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aleksander-app-shell-v9';
+const CACHE_NAME = 'aleksander-app-shell-v10';
 const APP_FILES = [
   './',
   './index.html',
@@ -6,6 +6,8 @@ const APP_FILES = [
   './src/subjects.js',
   './src/expanded-content.js',
   './src/app.js',
+  './src/android-updates.js',
+  './src/register-service-worker.js',
   './manifest.webmanifest',
   './assets/icons/favicon-32.png',
   './assets/icons/icon-192.png',
@@ -14,8 +16,9 @@ const APP_FILES = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_FILES)));
-  self.skipWaiting();
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_FILES.map((path) => new Request(path, { cache: 'reload' })))));
+  // Keep the current page and all of its files on the same release.
+  // The new worker takes over after existing application windows are closed.
 });
 
 self.addEventListener('activate', (event) => {
@@ -23,7 +26,6 @@ self.addEventListener('activate', (event) => {
     keys.filter((key) => key.startsWith('aleksander-app-shell-') && key !== CACHE_NAME)
       .map((key) => caches.delete(key)),
   )));
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -31,15 +33,13 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then((response) => {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
-      return response;
-    }).catch(() => caches.match('./index.html')));
+    event.respondWith(caches.open(CACHE_NAME).then(async (cache) => {
+      return await cache.match('./index.html') || fetch(request);
+    }));
     return;
   }
 
-  event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then((response) => {
+  event.respondWith(caches.open(CACHE_NAME).then((cache) => cache.match(request)).then((cached) => cached || fetch(request).then((response) => {
     if (response.ok) {
       const copy = response.clone();
       caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));

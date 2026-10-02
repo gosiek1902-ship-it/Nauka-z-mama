@@ -10,7 +10,11 @@ To statyczna aplikacja. Otwórz `index.html` w przeglądarce albo uruchom lokaln
 npx serve .
 ```
 
-Netlify może nadal publikować projekt z katalogu głównego repozytorium. Pliki `manifest.webmanifest` i `service-worker.js` zapewniają instalację PWA i buforowanie podstawowych zasobów do pracy offline.
+Netlify korzysta z `netlify.toml`: przygotowuje pliki przez `node scripts/build-web.mjs` i publikuje katalog `www`. Pliki `manifest.webmanifest` i `service-worker.js` zapewniają instalację PWA i buforowanie podstawowych zasobów do pracy offline. Każda zmiana plików automatycznie tworzy nową wersję cache PWA oraz pakiet aktualizacji Androida.
+
+## Automatyczne aktualizacje Androida
+
+Aplikacja zachowuje lokalny adres Capacitor i zapisane dane użytkownika. Pobiera kompletne, zweryfikowane wydania z `https://deluxe-longma-6bc34d.netlify.app`, przygotowuje je do następnego pełnego uruchomienia i zachowuje ostatnią działającą wersję offline. Nowy mechanizm wymaga jednorazowej instalacji zgodnie podpisanej aktualizacji APK; późniejsze zmiany materiałów nie wymagają nowego APK. Szczegóły zgodności, działania PWA i weryfikacji znajdują się w [docs/android-updates.md](docs/android-updates.md).
 
 ## Przygotowanie Androida
 
